@@ -49,9 +49,10 @@ impl From<NonNull<CvodeMemoryBlock>> for CvodeMemoryBlockNonNullPtr {
 
 pub struct Solver<const N: usize> {
     mem: CvodeMemoryBlockNonNullPtr,
-    _y0: NVectorSerial<N>,
-    _sunmatrix: SUNMatrix,
-    _linsolver: SUNLinearSolver,
+    y0: NVectorSerial<N>,
+    sunmatrix: SUNMatrix,
+    linsolver: SUNLinearSolver,
+    _atol: AbsTolerance<N>,
 }
 
 pub enum RhsResult {
@@ -121,14 +122,30 @@ fn check_flag_is_succes(flag: c_int, func_id: &'static str) -> Result<()> {
     }
 }
 
+pub enum AbsTolerance<const SIZE: usize> {
+    Scalar(realtype),
+    Vector(NVectorSerial<SIZE>),
+}
+
+impl<const SIZE: usize> AbsTolerance<SIZE> {
+    pub fn scalar(atol: F) -> Self {
+        AbsTolerance::Scalar(atol)
+    }
+
+    pub fn vector(atol: &[F; SIZE]) -> Self {
+        let atol = NVectorSerial::new_from(atol);
+        AbsTolerance::Vector(atol)
+    }
+}
+
 impl<const N: usize> Solver<N> {
     pub fn new(
         method: LinearMultistepMethod,
         f: RhsFCtype,
         t0: F,
         y0: &[F; N],
-        atol: F,
         rtol: F,
+        atol: AbsTolerance<N>,
     ) -> Result<Self> {
         assert_eq!(y0.len(), N);
         let mem_maybenull = unsafe { cvode::CVodeCreate(method as c_int) };
@@ -137,8 +154,17 @@ impl<const N: usize> Solver<N> {
         let y0 = NVectorSerial::new_from(y0);
         let flag = unsafe { cvode::CVodeInit(mem.as_raw(), Some(f), t0, y0.as_raw() as _) };
         check_flag_is_succes(flag, "CVodeInit")?;
-        let flag = unsafe { cvode::CVodeSStolerances(mem.as_raw(), atol, rtol) };
-        check_flag_is_succes(flag, "CVodeSStolerances")?;
+        match &atol {
+            &AbsTolerance::Scalar(atol) => {
+                let flag = unsafe { cvode::CVodeSStolerances(mem.as_raw(), rtol, atol) };
+                check_flag_is_succes(flag, "CVodeSStolerances")?;
+            }
+            AbsTolerance::Vector(atol) => {
+                let flag =
+                    unsafe { cvode::CVodeSVtolerances(mem.as_raw(), rtol, atol.as_raw() as _) };
+                check_flag_is_succes(flag, "CVodeSVtolerances")?;
+            }
+        }
         let matrix = unsafe {
             cvode_5_sys::sunmatrix_dense::SUNDenseMatrix(
                 N.try_into().unwrap(),
@@ -155,9 +181,10 @@ impl<const N: usize> Solver<N> {
         check_flag_is_succes(flag, "CVodeSetLinearSolver")?;
         Ok(Solver {
             mem,
-            _y0: y0,
-            _sunmatrix: matrix as _,
-            _linsolver: linsolver as _,
+            y0,
+            sunmatrix: matrix as _,
+            linsolver: linsolver as _,
+            _atol: atol as _,
         })
     }
 
@@ -167,21 +194,21 @@ impl<const N: usize> Solver<N> {
             cvode::CVode(
                 self.mem.as_raw(),
                 tout,
-                self._y0.as_raw() as _,
+                self.y0.as_raw() as _,
                 &mut tret,
                 step_kind as c_int,
             )
         };
         check_flag_is_succes(flag, "CVode")?;
-        Ok((tret, self._y0.as_ref()))
+        Ok((tret, self.y0.as_ref()))
     }
 }
 
 impl<const N: usize> Drop for Solver<N> {
     fn drop(&mut self) {
         unsafe { cvode::CVodeFree(&mut self.mem.as_raw()) }
-        unsafe { cvode::SUNLinSolFree(self._linsolver) };
-        unsafe { cvode::SUNMatDestroy(self._sunmatrix) };
+        unsafe { cvode::SUNLinSolFree(self.linsolver) };
+        unsafe { cvode::SUNMatDestroy(self.sunmatrix) };
     }
 }
 
@@ -199,6 +226,6 @@ mod tests {
     #[test]
     fn create() {
         let y0 = [0., 1.];
-        let _solver = Solver::new(LinearMultistepMethod::ADAMS, wrapped_f, 0., &y0, 1e-4, 1e-4);
+        let _solver = Solver::new(LinearMultistepMethod::ADAMS, wrapped_f, 0., &y0, 1e-4, AbsTolerance::Scalar(1e-4));
     }
 }

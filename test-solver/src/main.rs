@@ -11,8 +11,15 @@ fn main() {
     }
     wrap!(wrapped_f, f);
     //initialize the solver
-    let mut solver =
-        Solver::new(LinearMultistepMethod::ADAMS, wrapped_f, 0., &y0, 1e-4, 1e-4).unwrap();
+    let mut solver = Solver::new(
+        LinearMultistepMethod::ADAMS,
+        wrapped_f,
+        0.,
+        &y0,
+        1e-4,
+        AbsTolerance::scalar(1e-4),
+    )
+    .unwrap();
     //and solve
     let ts: Vec<_> = (1..100).collect();
     println!("0,{},{}", y0[0], y0[1]);
