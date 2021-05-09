@@ -2,13 +2,14 @@ use std::{convert::TryInto, intrinsics::transmute, ops::Deref, ptr::NonNull};
 
 use cvode_5_sys::{cvode::realtype, nvector_serial};
 
+
 #[repr(transparent)]
 #[derive(Debug)]
-pub struct NVectorSerial<const SIZE: usize> {
+pub struct NVectorSerialHeapAlloced<const SIZE: usize> {
     inner: NonNull<nvector_serial::_generic_N_Vector>,
 }
 
-impl<const SIZE: usize> Deref for NVectorSerial<SIZE> {
+impl<const SIZE: usize> Deref for NVectorSerialHeapAlloced<SIZE> {
     type Target = nvector_serial::_generic_N_Vector;
 
     fn deref(&self) -> &Self::Target {
@@ -16,12 +17,12 @@ impl<const SIZE: usize> Deref for NVectorSerial<SIZE> {
     }
  }
 
-impl<const SIZE: usize> NVectorSerial<SIZE> {
-    pub fn as_ref(&self) -> &[realtype; SIZE] {
+impl<const SIZE: usize> NVectorSerialHeapAlloced<SIZE> {
+    pub fn as_slice(&self) -> &[realtype; SIZE] {
         unsafe { transmute(nvector_serial::N_VGetArrayPointer_Serial(self.as_raw())) }
     }
 
-    pub fn as_mut(&mut self) -> &mut [realtype; SIZE] {
+    pub fn as_slice_mut(&mut self) -> &mut [realtype; SIZE] {
         unsafe { transmute(nvector_serial::N_VGetArrayPointer_Serial(self.as_raw())) }
     }
 
@@ -34,7 +35,7 @@ impl<const SIZE: usize> NVectorSerial<SIZE> {
 
     pub fn new_from(data: &[realtype; SIZE]) -> Self {
         let mut res = Self::new();
-        res.as_mut().copy_from_slice(data);
+        res.as_slice_mut().copy_from_slice(data);
         res
     }
 
@@ -43,7 +44,7 @@ impl<const SIZE: usize> NVectorSerial<SIZE> {
     }
 }
 
-impl<const SIZE: usize> Drop for NVectorSerial<SIZE> {
+impl<const SIZE: usize> Drop for NVectorSerialHeapAlloced<SIZE> {
     fn drop(&mut self) {
         unsafe { nvector_serial::N_VDestroy(self.as_raw()) }
     }

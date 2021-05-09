@@ -10,7 +10,7 @@ use cvode_5_sys::{
 };
 
 mod nvector;
-use nvector::NVectorSerial;
+use nvector::NVectorSerialHeapAlloced;
 
 pub type Realtype = realtype;
 pub type CVector = cvode::N_Vector;
@@ -61,7 +61,7 @@ impl From<NonNull<CvodeMemoryBlock>> for CvodeMemoryBlockNonNullPtr {
 /// See [crate-level](`crate`) documentation for more.
 pub struct Solver<UserData, const N: usize> {
     mem: CvodeMemoryBlockNonNullPtr,
-    y0: NVectorSerial<N>,
+    y0: NVectorSerialHeapAlloced<N>,
     sunmatrix: SUNMatrix,
     linsolver: SUNLinearSolver,
     atol: AbsTolerance<N>,
@@ -138,7 +138,7 @@ fn check_flag_is_succes(flag: c_int, func_id: &'static str) -> Result<()> {
 
 pub enum AbsTolerance<const SIZE: usize> {
     Scalar(Realtype),
-    Vector(NVectorSerial<SIZE>),
+    Vector(NVectorSerialHeapAlloced<SIZE>),
 }
 
 impl<const SIZE: usize> AbsTolerance<SIZE> {
@@ -147,7 +147,7 @@ impl<const SIZE: usize> AbsTolerance<SIZE> {
     }
 
     pub fn vector(atol: &[Realtype; SIZE]) -> Self {
-        let atol = NVectorSerial::new_from(atol);
+        let atol = NVectorSerialHeapAlloced::new_from(atol);
         AbsTolerance::Vector(atol)
     }
 }
@@ -167,7 +167,7 @@ impl<UserData, const N: usize> Solver<UserData, N> {
             let mem_maybenull = unsafe { cvode::CVodeCreate(method as c_int) };
             check_non_null(mem_maybenull as *mut CvodeMemoryBlock, "CVodeCreate")?.into()
         };
-        let y0 = NVectorSerial::new_from(y0);
+        let y0 = NVectorSerialHeapAlloced::new_from(y0);
         let matrix = {
             let matrix = unsafe {
                 cvode_5_sys::sunmatrix_dense::SUNDenseMatrix(
@@ -244,7 +244,7 @@ impl<UserData, const N: usize> Solver<UserData, N> {
             )
         };
         check_flag_is_succes(flag, "CVode")?;
-        Ok((tret, self.y0.as_ref()))
+        Ok((tret, self.y0.as_slice()))
     }
 }
 
