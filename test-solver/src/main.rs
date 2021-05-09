@@ -16,7 +16,7 @@ fn main() {
         &y0,
         1e-4,
         AbsTolerance::scalar(1e-4),
-        1e-2
+        1e-2,
     )
     .unwrap();
     //and solve

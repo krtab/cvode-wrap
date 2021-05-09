@@ -14,7 +14,6 @@ pub struct NVectorSerial<const SIZE: usize> {
 }
 
 impl<const SIZE: usize> NVectorSerial<SIZE> {
-    
     pub unsafe fn as_raw(&self) -> nvector_serial::N_Vector {
         std::mem::transmute(&self.inner)
     }
