@@ -5,11 +5,11 @@ use cvode_wrap::*;
 fn main() {
     let y0 = [0., 1.];
     //define the right-hand-side
-    fn f(_t: F, y: &[F; 2], ydot: &mut [F; 2], _data: *mut c_void) -> RhsResult {
-        *ydot = [y[1], -y[0] / 10.];
+    fn f(_t: F, y: &[F; 2], ydot: &mut [F; 2], k: &F) -> RhsResult {
+        *ydot = [y[1], -y[0] * k];
         RhsResult::Ok
     }
-    wrap!(wrapped_f, f);
+    wrap!(wrapped_f, f, F);
     //initialize the solver
     let mut solver = Solver::new(
         LinearMultistepMethod::ADAMS,
@@ -18,6 +18,7 @@ fn main() {
         &y0,
         1e-4,
         AbsTolerance::scalar(1e-4),
+        1e-2
     )
     .unwrap();
     //and solve
