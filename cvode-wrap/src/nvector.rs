@@ -38,15 +38,6 @@ impl<const SIZE: usize> NVectorSerial<SIZE> {
         res
     }
 
-    pub fn make(data: &mut [realtype; SIZE]) -> Self {
-        Self {
-            inner: NonNull::new(unsafe {
-                nvector_serial::N_VMake_Serial(SIZE.try_into().unwrap(), data.as_mut_ptr())
-            })
-            .unwrap(),
-        }
-    }
-
     pub fn as_raw(&self) -> nvector_serial::N_Vector {
         self.inner.as_ptr()
     }

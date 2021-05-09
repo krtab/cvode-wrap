@@ -1,15 +1,13 @@
-use std::ffi::c_void;
-
 use cvode_wrap::*;
 
 fn main() {
     let y0 = [0., 1.];
     //define the right-hand-side
-    fn f(_t: F, y: &[F; 2], ydot: &mut [F; 2], k: &F) -> RhsResult {
+    fn f(_t: Realtype, y: &[Realtype; 2], ydot: &mut [Realtype; 2], k: &Realtype) -> RhsResult {
         *ydot = [y[1], -y[0] * k];
         RhsResult::Ok
     }
-    wrap!(wrapped_f, f, F);
+    wrap!(wrapped_f, f, Realtype);
     //initialize the solver
     let mut solver = Solver::new(
         LinearMultistepMethod::ADAMS,

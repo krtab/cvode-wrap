@@ -1,3 +1,5 @@
+//! A wrapper around the sundials ODE solver.
+
 use std::{convert::TryInto, pin::Pin};
 use std::{ffi::c_void, intrinsics::transmute, os::raw::c_int, ptr::NonNull};
 
@@ -8,9 +10,9 @@ use cvode_5_sys::{
 };
 
 mod nvector;
-pub use nvector::NVectorSerial;
+use nvector::NVectorSerial;
 
-pub type F = realtype;
+pub type Realtype = realtype;
 pub type CVector = cvode::N_Vector;
 
 #[repr(u32)]
@@ -47,6 +49,16 @@ impl From<NonNull<CvodeMemoryBlock>> for CvodeMemoryBlockNonNullPtr {
     }
 }
 
+/// The main struct of the crate. Wraps a sundials solver.
+///
+/// Args
+/// ----
+/// `UserData` is the type of the supplementary arguments for the
+/// right-hand-side. If unused, should be `()`.
+///
+/// `N` is the "problem size", that is the dimension of the state space.
+///
+/// See [crate-level](`crate`) documentation for more.
 pub struct Solver<UserData, const N: usize> {
     mem: CvodeMemoryBlockNonNullPtr,
     y0: NVectorSerial<N>,
@@ -62,11 +74,13 @@ pub enum RhsResult {
     NonRecoverableError(u8),
 }
 
-type RhsF<UserData, const N: usize> = fn(F, &[F; N], &mut [F; N], &UserData) -> RhsResult;
+pub type RhsF<UserData, const N: usize> = fn(t: Realtype, y: &[Realtype; N], ydot: &mut [Realtype; N], user_data: &UserData) -> RhsResult;
+
+pub type RhsFCtype<UserData> = extern "C" fn(t: Realtype, y: CVector, ydot: CVector, user_data: *const UserData) -> c_int;
 
 pub fn wrap_f<UserData, const N: usize>(
     f: RhsF<UserData, N>,
-    t: F,
+    t: Realtype,
     y: CVector,
     ydot: CVector,
     data: &UserData,
@@ -85,7 +99,7 @@ pub fn wrap_f<UserData, const N: usize>(
 macro_rules! wrap {
     ($wrapped_f_name: ident, $f_name: ident, $user_data: ty) => {
         extern "C" fn $wrapped_f_name(
-            t: F,
+            t: Realtype,
             y: CVector,
             ydot: CVector,
             data: *const  $user_data,
@@ -95,8 +109,6 @@ macro_rules! wrap {
         }
     };
 }
-
-type RhsFCtype<UserData> = extern "C" fn(F, CVector, CVector, *const UserData) -> c_int;
 
 #[repr(u32)]
 pub enum StepKind {
@@ -125,16 +137,16 @@ fn check_flag_is_succes(flag: c_int, func_id: &'static str) -> Result<()> {
 }
 
 pub enum AbsTolerance<const SIZE: usize> {
-    Scalar(realtype),
+    Scalar(Realtype),
     Vector(NVectorSerial<SIZE>),
 }
 
 impl<const SIZE: usize> AbsTolerance<SIZE> {
-    pub fn scalar(atol: F) -> Self {
+    pub fn scalar(atol: Realtype) -> Self {
         AbsTolerance::Scalar(atol)
     }
 
-    pub fn vector(atol: &[F; SIZE]) -> Self {
+    pub fn vector(atol: &[Realtype; SIZE]) -> Self {
         let atol = NVectorSerial::new_from(atol);
         AbsTolerance::Vector(atol)
     }
@@ -144,9 +156,9 @@ impl<UserData, const N: usize> Solver<UserData, N> {
     pub fn new(
         method: LinearMultistepMethod,
         f: RhsFCtype<UserData>,
-        t0: F,
-        y0: &[F; N],
-        rtol: F,
+        t0: Realtype,
+        y0: &[Realtype; N],
+        rtol: Realtype,
         atol: AbsTolerance<N>,
         user_data: UserData,
     ) -> Result<Self> {
@@ -220,7 +232,7 @@ impl<UserData, const N: usize> Solver<UserData, N> {
         Ok(res)
     }
 
-    pub fn step(&mut self, tout: F, step_kind: StepKind) -> Result<(F, &[F; N])> {
+    pub fn step(&mut self, tout: Realtype, step_kind: StepKind) -> Result<(Realtype, &[Realtype; N])> {
         let mut tret = 0.;
         let flag = unsafe {
             cvode::CVode(
@@ -248,7 +260,7 @@ impl<UserData, const N: usize> Drop for Solver<UserData, N> {
 mod tests {
     use super::*;
 
-    fn f(_t: super::F, y: &[F; 2], ydot: &mut [F; 2], _data: &()) -> RhsResult {
+    fn f(_t: super::Realtype, y: &[Realtype; 2], ydot: &mut [Realtype; 2], _data: &()) -> RhsResult {
         *ydot = [y[1], -y[0]];
         RhsResult::Ok
     }
