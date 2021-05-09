@@ -7,7 +7,7 @@ fn main() {
         *ydot = [y[1], -y[0] * k];
         RhsResult::Ok
     }
-    wrap!(wrapped_f, f, Realtype);
+    wrap!(wrapped_f, f, Realtype, 2);
     //initialize the solver
     let mut solver = Solver::new(
         LinearMultistepMethod::ADAMS,
