@@ -3,10 +3,9 @@
 use std::{convert::TryInto, pin::Pin};
 use std::{ffi::c_void, intrinsics::transmute, os::raw::c_int, ptr::NonNull};
 
-use cvode::SUNMatrix;
 use cvode_5_sys::{
-    cvode::{self, realtype, SUNLinearSolver},
-    nvector_serial::N_VGetArrayPointer,
+    realtype, SUNLinearSolver, SUNMatrix,
+    N_VGetArrayPointer,
 };
 
 mod nvector;
@@ -17,8 +16,8 @@ pub type Realtype = realtype;
 #[repr(u32)]
 #[derive(Debug)]
 pub enum LinearMultistepMethod {
-    ADAMS = cvode::CV_ADAMS,
-    BDF = cvode::CV_BDF,
+    ADAMS = cvode_5_sys::CV_ADAMS,
+    BDF = cvode_5_sys::CV_BDF,
 }
 
 #[repr(C)]
@@ -117,8 +116,8 @@ macro_rules! wrap {
 
 #[repr(u32)]
 pub enum StepKind {
-    Normal = cvode::CV_NORMAL,
-    OneStep = cvode::CV_ONE_STEP,
+    Normal = cvode_5_sys::CV_NORMAL,
+    OneStep = cvode_5_sys::CV_ONE_STEP,
 }
 
 #[derive(Debug)]
@@ -134,7 +133,7 @@ fn check_non_null<T>(ptr: *mut T, func_id: &'static str) -> Result<NonNull<T>> {
 }
 
 fn check_flag_is_succes(flag: c_int, func_id: &'static str) -> Result<()> {
-    if flag == cvode::CV_SUCCESS as i32 {
+    if flag == cvode_5_sys::CV_SUCCESS as i32 {
         Ok(())
     } else {
         Err(Error::ErrorCode { flag, func_id })
@@ -169,13 +168,13 @@ impl<UserData, const N: usize> Solver<UserData, N> {
     ) -> Result<Self> {
         assert_eq!(y0.len(), N);
         let mem: CvodeMemoryBlockNonNullPtr = {
-            let mem_maybenull = unsafe { cvode::CVodeCreate(method as c_int) };
+            let mem_maybenull = unsafe { cvode_5_sys::CVodeCreate(method as c_int) };
             check_non_null(mem_maybenull as *mut CvodeMemoryBlock, "CVodeCreate")?.into()
         };
         let y0 = NVectorSerialHeapAlloced::new_from(y0);
         let matrix = {
             let matrix = unsafe {
-                cvode_5_sys::sunmatrix_dense::SUNDenseMatrix(
+                cvode_5_sys::SUNDenseMatrix(
                     N.try_into().unwrap(),
                     N.try_into().unwrap(),
                 )
@@ -184,9 +183,9 @@ impl<UserData, const N: usize> Solver<UserData, N> {
         };
         let linsolver = {
             let linsolver = unsafe {
-                cvode_5_sys::sunlinsol_dense::SUNDenseLinearSolver(
-                    y0.as_raw() as _,
-                    matrix.as_ptr() as _,
+                cvode_5_sys::SUNDenseLinearSolver(
+                    y0.as_raw(),
+                    matrix.as_ptr(),
                 )
             };
             check_non_null(linsolver, "SUNDenseLinearSolver")?
@@ -195,46 +194,46 @@ impl<UserData, const N: usize> Solver<UserData, N> {
         let res = Solver {
             mem,
             y0,
-            sunmatrix: matrix.as_ptr() as _,
-            linsolver: linsolver.as_ptr() as _,
+            sunmatrix: matrix.as_ptr(),
+            linsolver: linsolver.as_ptr(),
             atol,
             user_data,
         };
         {
             let flag = unsafe {
-                cvode::CVodeInit(
+                cvode_5_sys::CVodeInit(
                     mem.as_raw(),
                     Some(std::mem::transmute(f)),
                     t0,
-                    res.y0.as_raw() as _,
+                    res.y0.as_raw(),
                 )
             };
             check_flag_is_succes(flag, "CVodeInit")?;
         }
         match &res.atol {
             &AbsTolerance::Scalar(atol) => {
-                let flag = unsafe { cvode::CVodeSStolerances(mem.as_raw(), rtol, atol) };
+                let flag = unsafe { cvode_5_sys::CVodeSStolerances(mem.as_raw(), rtol, atol) };
                 check_flag_is_succes(flag, "CVodeSStolerances")?;
             }
             AbsTolerance::Vector(atol) => {
                 let flag =
-                    unsafe { cvode::CVodeSVtolerances(mem.as_raw(), rtol, atol.as_raw() as _) };
+                    unsafe { cvode_5_sys::CVodeSVtolerances(mem.as_raw(), rtol, atol.as_raw()) };
                 check_flag_is_succes(flag, "CVodeSVtolerances")?;
             }
         }
         {
             let flag = unsafe {
-                cvode::CVodeSetLinearSolver(
+                cvode_5_sys::CVodeSetLinearSolver(
                     mem.as_raw(),
-                    linsolver.as_ptr() as _,
-                    matrix.as_ptr() as _,
+                    linsolver.as_ptr(),
+                    matrix.as_ptr(),
                 )
             };
             check_flag_is_succes(flag, "CVodeSetLinearSolver")?;
         }
         {
             let flag = unsafe {
-                cvode::CVodeSetUserData(
+                cvode_5_sys::CVodeSetUserData(
                     mem.as_raw(),
                     std::mem::transmute(res.user_data.as_ref().get_ref()),
                 )
@@ -251,10 +250,10 @@ impl<UserData, const N: usize> Solver<UserData, N> {
     ) -> Result<(Realtype, &[Realtype; N])> {
         let mut tret = 0.;
         let flag = unsafe {
-            cvode::CVode(
+            cvode_5_sys::CVode(
                 self.mem.as_raw(),
                 tout,
-                self.y0.as_raw() as _,
+                self.y0.as_raw(),
                 &mut tret,
                 step_kind as c_int,
             )
@@ -266,9 +265,9 @@ impl<UserData, const N: usize> Solver<UserData, N> {
 
 impl<UserData, const N: usize> Drop for Solver<UserData, N> {
     fn drop(&mut self) {
-        unsafe { cvode::CVodeFree(&mut self.mem.as_raw()) }
-        unsafe { cvode::SUNLinSolFree(self.linsolver) };
-        unsafe { cvode::SUNMatDestroy(self.sunmatrix) };
+        unsafe { cvode_5_sys::CVodeFree(&mut self.mem.as_raw()) }
+        unsafe { cvode_5_sys::SUNLinSolFree(self.linsolver) };
+        unsafe { cvode_5_sys::SUNMatDestroy(self.sunmatrix) };
     }
 }
 

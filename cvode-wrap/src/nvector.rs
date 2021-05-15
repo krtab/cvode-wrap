@@ -5,25 +5,25 @@ use std::{
     ptr::NonNull,
 };
 
-use cvode_5_sys::{cvode::realtype, nvector_serial};
+use cvode_5_sys::realtype;
 
 #[repr(transparent)]
 #[derive(Debug)]
 pub struct NVectorSerial<const SIZE: usize> {
-    inner: nvector_serial::_generic_N_Vector,
+    inner: cvode_5_sys::_generic_N_Vector,
 }
 
 impl<const SIZE: usize> NVectorSerial<SIZE> {
-    pub unsafe fn as_raw(&self) -> nvector_serial::N_Vector {
+    pub unsafe fn as_raw(&self) -> cvode_5_sys::N_Vector {
         std::mem::transmute(&self.inner)
     }
 
     pub fn as_slice(&self) -> &[realtype; SIZE] {
-        unsafe { transmute(nvector_serial::N_VGetArrayPointer_Serial(self.as_raw())) }
+        unsafe { transmute(cvode_5_sys::N_VGetArrayPointer_Serial(self.as_raw())) }
     }
 
     pub fn as_slice_mut(&mut self) -> &mut [realtype; SIZE] {
-        unsafe { transmute(nvector_serial::N_VGetArrayPointer_Serial(self.as_raw())) }
+        unsafe { transmute(cvode_5_sys::N_VGetArrayPointer_Serial(self.as_raw())) }
     }
 }
 
@@ -49,7 +49,7 @@ impl<const SIZE: usize> DerefMut for NVectorSerialHeapAlloced<SIZE> {
 
 impl<const SIZE: usize> NVectorSerialHeapAlloced<SIZE> {
     pub fn new() -> Self {
-        let raw_c = unsafe { nvector_serial::N_VNew_Serial(SIZE.try_into().unwrap()) };
+        let raw_c = unsafe { cvode_5_sys::N_VNew_Serial(SIZE.try_into().unwrap()) };
         Self {
             inner: NonNull::new(raw_c as *mut NVectorSerial<SIZE>).unwrap(),
         }
@@ -64,6 +64,6 @@ impl<const SIZE: usize> NVectorSerialHeapAlloced<SIZE> {
 
 impl<const SIZE: usize> Drop for NVectorSerialHeapAlloced<SIZE> {
     fn drop(&mut self) {
-        unsafe { nvector_serial::N_VDestroy(self.as_raw()) }
+        unsafe { cvode_5_sys::N_VDestroy(self.as_raw()) }
     }
 }

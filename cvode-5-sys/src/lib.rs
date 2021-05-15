@@ -5,7 +5,4 @@
     improper_ctypes
 )]
 
-pub mod cvode;
-pub mod nvector_serial;
-pub mod sunlinsol_dense;
-pub mod sunmatrix_dense;
+include!(concat!(env!("OUT_DIR"), "/generated.rs"));
