@@ -1,23 +1,67 @@
 //! A wrapper around the sundials ODE solver.
+//!
+//! # Example
+//!
+//! An oscillatory 2-D system.
+//!
+//! ```
+//! use cvode_wrap::*;
+//!
+//! let y0 = [0., 1.];
+//! // define the right-hand-side as a rust function of type RhsF<Realtype, 2>
+//! fn f(
+//!   _t: Realtype,
+//!    y: &[Realtype; 2],
+//!    ydot: &mut [Realtype; 2],
+//!    k: &Realtype,
+//! ) -> RhsResult {
+//!     *ydot = [y[1], -y[0] * k];
+//!     RhsResult::Ok
+//! }
+//! // Use the `wrap!` macro to define a `wrapped_f` function callable
+//! // from C (of type `c_wrapping::RhsFCtype`) that wraps `f`.
+//! wrap!(wrapped_f, f, Realtype, 2);
+//! //initialize the solver
+//! let mut solver = Solver::new(
+//!     LinearMultistepMethod::Adams,
+//!     wrapped_f,
+//!     0.,
+//!     &y0,
+//!     1e-4,
+//!     AbsTolerance::scalar(1e-4),
+//!     1e-2,
+//! )
+//! .unwrap();
+//! //and solve
+//! let ts: Vec<_> = (1..100).collect();
+//! println!("0,{},{}", y0[0], y0[1]);
+//! for &t in &ts {
+//!     let (_tret, &[x, xdot]) = solver.step(t as _, StepKind::Normal).unwrap();
+//!     println!("{},{},{}", t, x, xdot);
+//! }
+//! ```
 
 use std::{convert::TryInto, pin::Pin};
-use std::{ffi::c_void, intrinsics::transmute, os::raw::c_int, ptr::NonNull};
+use std::{ffi::c_void, os::raw::c_int, ptr::NonNull};
 
-use cvode_5_sys::{
-    realtype, SUNLinearSolver, SUNMatrix,
-    N_VGetArrayPointer,
-};
+use cvode_5_sys::{realtype, SUNLinearSolver, SUNMatrix};
 
 mod nvector;
-pub use nvector::{NVectorSerial, NVectorSerialHeapAlloced};
+pub use nvector::{NVectorSerial, NVectorSerialHeapAllocated};
 
+pub mod c_wrapping;
+
+/// The floatting-point type sundials was compiled with
 pub type Realtype = realtype;
 
 #[repr(u32)]
 #[derive(Debug)]
+/// An integration method.
 pub enum LinearMultistepMethod {
-    ADAMS = cvode_5_sys::CV_ADAMS,
-    BDF = cvode_5_sys::CV_BDF,
+    /// Recomended for non-stiff problems.
+    Adams = cvode_5_sys::CV_ADAMS,
+    /// Recommended for stiff problems.
+    Bdf = cvode_5_sys::CV_BDF,
 }
 
 #[repr(C)]
@@ -59,77 +103,70 @@ impl From<NonNull<CvodeMemoryBlock>> for CvodeMemoryBlockNonNullPtr {
 /// See [crate-level](`crate`) documentation for more.
 pub struct Solver<UserData, const N: usize> {
     mem: CvodeMemoryBlockNonNullPtr,
-    y0: NVectorSerialHeapAlloced<N>,
+    y0: NVectorSerialHeapAllocated<N>,
     sunmatrix: SUNMatrix,
     linsolver: SUNLinearSolver,
     atol: AbsTolerance<N>,
     user_data: Pin<Box<UserData>>,
 }
 
+/// A return type for the right-hand-side rust function.
+///
+/// Adapted from Sundials cv-ode guide version 5.7 (BSD Licensed), setcion 4.6.1 :
+///
+/// > If a recoverable error occurred, `cvode` will attempt to correct,
+/// > if the error is unrecoverable, the integration is halted.
+/// >
+/// > A recoverable failure error return is typically used to flag a value of
+/// > the dependent variableythat is “illegal” in some way (e.g., negative where
+/// > only a non-negative value is physically meaningful).  If such a return is
+/// > made, `cvode` will attempt to recover (possibly repeating the nonlinear solve,
+/// > or reducing the step size) in order to avoid this recoverable error return.
 pub enum RhsResult {
+    /// Indicates that there was no error
     Ok,
+    /// Indicate that there was a recoverable error and its code
     RecoverableError(u8),
+    /// Indicatest hat there was a non recoverable error
     NonRecoverableError(u8),
 }
 
+/// The type of the "rust" Rhs function  that can be then wrapped with [`wrap`].
+///
+/// # Type arguments
+/// - `UserData` is any stuct representing "parameters" of the system, that is data
+/// that doesn't change during the evolution of the state, but is needed to compute
+/// the right-hand side.
+/// - `N` is the dimension of the system
 pub type RhsF<UserData, const N: usize> =
     fn(t: Realtype, y: &[Realtype; N], ydot: &mut [Realtype; N], user_data: &UserData) -> RhsResult;
 
-pub type RhsFCtype<UserData, const N: usize> = extern "C" fn(
-    t: Realtype,
-    y: *const NVectorSerial<N>,
-    ydot: *mut NVectorSerial<N>,
-    user_data: *const UserData,
-) -> c_int;
-
-pub fn wrap_f<UserData, const N: usize>(
-    f: RhsF<UserData, N>,
-    t: Realtype,
-    y: *const NVectorSerial<N>,
-    ydot: *mut NVectorSerial<N>,
-    data: &UserData,
-) -> c_int {
-    let y = unsafe { transmute(N_VGetArrayPointer(y as _)) };
-    let ydot = unsafe { transmute(N_VGetArrayPointer(ydot as _)) };
-    let res = f(t, y, ydot, data);
-    match res {
-        RhsResult::Ok => 0,
-        RhsResult::RecoverableError(e) => e as c_int,
-        RhsResult::NonRecoverableError(e) => -(e as c_int),
-    }
-}
-
-#[macro_export]
-macro_rules! wrap {
-    ($wrapped_f_name: ident, $f_name: ident, $user_data: ty, $problem_size: expr) => {
-        extern "C" fn $wrapped_f_name(
-            t: Realtype,
-            y: *const NVectorSerial<$problem_size>,
-            ydot: *mut NVectorSerial<$problem_size>,
-            data: *const $user_data,
-        ) -> std::os::raw::c_int {
-            let data = unsafe { std::mem::transmute(data) };
-            wrap_f($f_name, t, y, ydot, data)
-        }
-    };
-}
-
+/// Type of integration step
 #[repr(u32)]
 pub enum StepKind {
+    /// The `NORMAL`option causes the solver to take internal steps
+    /// until it has reached or just passed the user-specified time.
+    /// The solver then interpolates in order to return an approximate
+    /// value of y at the desired time.
     Normal = cvode_5_sys::CV_NORMAL,
+    /// The `CV_ONE_STEP` option tells the solver to take just one
+    /// internal step and then return thesolution at the point reached
+    /// by that step.
     OneStep = cvode_5_sys::CV_ONE_STEP,
 }
 
+/// The error type for this crate
 #[derive(Debug)]
 pub enum Error {
     NullPointerError { func_id: &'static str },
     ErrorCode { func_id: &'static str, flag: c_int },
 }
 
+/// A short-hand for `std::result::Result<T, crate::Error>`
 pub type Result<T> = std::result::Result<T, Error>;
 
 fn check_non_null<T>(ptr: *mut T, func_id: &'static str) -> Result<NonNull<T>> {
-    NonNull::new(ptr).ok_or_else(|| Error::NullPointerError { func_id })
+    NonNull::new(ptr).ok_or(Error::NullPointerError { func_id })
 }
 
 fn check_flag_is_succes(flag: c_int, func_id: &'static str) -> Result<()> {
@@ -140,9 +177,10 @@ fn check_flag_is_succes(flag: c_int, func_id: &'static str) -> Result<()> {
     }
 }
 
+/// An enum representing the choice between a scalar or vector absolute tolerance
 pub enum AbsTolerance<const SIZE: usize> {
     Scalar(Realtype),
-    Vector(NVectorSerialHeapAlloced<SIZE>),
+    Vector(NVectorSerialHeapAllocated<SIZE>),
 }
 
 impl<const SIZE: usize> AbsTolerance<SIZE> {
@@ -151,7 +189,7 @@ impl<const SIZE: usize> AbsTolerance<SIZE> {
     }
 
     pub fn vector(atol: &[Realtype; SIZE]) -> Self {
-        let atol = NVectorSerialHeapAlloced::new_from(atol);
+        let atol = NVectorSerialHeapAllocated::new_from(atol);
         AbsTolerance::Vector(atol)
     }
 }
@@ -159,7 +197,7 @@ impl<const SIZE: usize> AbsTolerance<SIZE> {
 impl<UserData, const N: usize> Solver<UserData, N> {
     pub fn new(
         method: LinearMultistepMethod,
-        f: RhsFCtype<UserData, N>,
+        f: c_wrapping::RhsFCtype<UserData, N>,
         t0: Realtype,
         y0: &[Realtype; N],
         rtol: Realtype,
@@ -171,23 +209,16 @@ impl<UserData, const N: usize> Solver<UserData, N> {
             let mem_maybenull = unsafe { cvode_5_sys::CVodeCreate(method as c_int) };
             check_non_null(mem_maybenull as *mut CvodeMemoryBlock, "CVodeCreate")?.into()
         };
-        let y0 = NVectorSerialHeapAlloced::new_from(y0);
+        let y0 = NVectorSerialHeapAllocated::new_from(y0);
         let matrix = {
             let matrix = unsafe {
-                cvode_5_sys::SUNDenseMatrix(
-                    N.try_into().unwrap(),
-                    N.try_into().unwrap(),
-                )
+                cvode_5_sys::SUNDenseMatrix(N.try_into().unwrap(), N.try_into().unwrap())
             };
             check_non_null(matrix, "SUNDenseMatrix")?
         };
         let linsolver = {
-            let linsolver = unsafe {
-                cvode_5_sys::SUNDenseLinearSolver(
-                    y0.as_raw(),
-                    matrix.as_ptr(),
-                )
-            };
+            let linsolver =
+                unsafe { cvode_5_sys::SUNDenseLinearSolver(y0.as_raw(), matrix.as_ptr()) };
             check_non_null(linsolver, "SUNDenseLinearSolver")?
         };
         let user_data = Box::pin(user_data);
@@ -223,11 +254,7 @@ impl<UserData, const N: usize> Solver<UserData, N> {
         }
         {
             let flag = unsafe {
-                cvode_5_sys::CVodeSetLinearSolver(
-                    mem.as_raw(),
-                    linsolver.as_ptr(),
-                    matrix.as_ptr(),
-                )
+                cvode_5_sys::CVodeSetLinearSolver(mem.as_raw(), linsolver.as_ptr(), matrix.as_ptr())
             };
             check_flag_is_succes(flag, "CVodeSetLinearSolver")?;
         }
@@ -291,7 +318,7 @@ mod tests {
     fn create() {
         let y0 = [0., 1.];
         let _solver = Solver::new(
-            LinearMultistepMethod::ADAMS,
+            LinearMultistepMethod::Adams,
             wrapped_f,
             0.,
             &y0,

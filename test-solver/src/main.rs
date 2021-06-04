@@ -10,7 +10,7 @@ fn main() {
     wrap!(wrapped_f, f, Realtype, 2);
     //initialize the solver
     let mut solver = Solver::new(
-        LinearMultistepMethod::ADAMS,
+        LinearMultistepMethod::Adams,
         wrapped_f,
         0.,
         &y0,
