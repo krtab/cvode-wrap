@@ -174,8 +174,7 @@ impl<UserData, const N: usize> Solver<UserData, N> {
             check_non_null(matrix, "SUNDenseMatrix")?
         };
         let linsolver = {
-            let linsolver =
-                unsafe { cvode_5_sys::SUNDenseLinearSolver(y0.as_raw(), matrix.as_ptr()) };
+            let linsolver = unsafe { cvode_5_sys::SUNLinSol_Dense(y0.as_raw(), matrix.as_ptr()) };
             check_non_null(linsolver, "SUNDenseLinearSolver")?
         };
         let user_data = Box::pin(user_data);
