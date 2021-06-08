@@ -9,13 +9,13 @@ fn main() {
     }
     wrap!(wrapped_f, f, Realtype, 2);
     //initialize the solver
-    let mut solver = Solver::new(
+    let mut solver = cvode::Solver::new(
         LinearMultistepMethod::Adams,
         wrapped_f,
         0.,
         &y0,
         1e-4,
-        AbsTolerance::scalar(1e-4),
+        cvode::AbsTolerance::scalar(1e-4),
         1e-2,
     )
     .unwrap();
