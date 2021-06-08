@@ -2,5 +2,5 @@
 members = [
     "cvode-5-sys",
     "cvode-wrap",
-    "test-solver"
+    "example"
 ]
