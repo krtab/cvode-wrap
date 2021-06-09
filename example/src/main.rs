@@ -7,11 +7,10 @@ fn main() {
         *ydot = [y[1], -y[0] * k];
         RhsResult::Ok
     }
-    wrap!(wrapped_f, f, Realtype, 2);
     //initialize the solver
     let mut solver = cvode::Solver::new(
         LinearMultistepMethod::Adams,
-        wrapped_f,
+        f,
         0.,
         &y0,
         1e-4,

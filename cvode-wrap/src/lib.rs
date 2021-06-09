@@ -5,8 +5,6 @@ use cvode_5_sys::realtype;
 mod nvector;
 pub use nvector::{NVectorSerial, NVectorSerialHeapAllocated};
 
-pub mod c_wrapping;
-
 pub mod cvode;
 
 /// The floatting-point type sundials was compiled with
@@ -43,16 +41,6 @@ pub enum RhsResult {
     NonRecoverableError(u8),
 }
 
-/// The type of the "rust" Rhs function  that can be then wrapped with [`wrap`].
-///
-/// # Type arguments
-/// - `UserData` is any stuct representing "parameters" of the system, that is data
-/// that doesn't change during the evolution of the state, but is needed to compute
-/// the right-hand side.
-/// - `N` is the dimension of the system
-pub type RhsF<UserData, const N: usize> =
-    fn(t: Realtype, y: &[Realtype; N], ydot: &mut [Realtype; N], user_data: &UserData) -> RhsResult;
-
 /// Type of integration step
 #[repr(u32)]
 pub enum StepKind {
@@ -65,6 +53,11 @@ pub enum StepKind {
     /// internal step and then return thesolution at the point reached
     /// by that step.
     OneStep = cvode_5_sys::CV_ONE_STEP,
+}
+
+struct WrappingUserData<UserData, F> {
+    actual_user_data: UserData,
+    f: F,
 }
 
 /// The error type for this crate

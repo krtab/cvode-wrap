@@ -18,11 +18,8 @@ fn f(
     *ydot = [y[1], -y[0] * k];
     RhsResult::Ok
 }
-// Use the `wrap!` macro to define a `wrapped_f` function callable
-// from C (of type `c_wrapping::RhsFCtype`) that wraps `f`.
-wrap!(wrapped_f, f, Realtype, 2);
 //initialize the solver
-let mut solver = Solver::new(
+let mut solver = cvode::Solver::new(
     LinearMultistepMethod::Adams,
     wrapped_f,
     0.,

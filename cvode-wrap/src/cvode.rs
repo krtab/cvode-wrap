@@ -2,7 +2,10 @@ use std::{convert::TryInto, ffi::c_void, os::raw::c_int, pin::Pin, ptr::NonNull}
 
 use cvode_5_sys::{SUNLinearSolver, SUNMatrix};
 
-use crate::{LinearMultistepMethod, NVectorSerialHeapAllocated, Realtype, Result, StepKind, c_wrapping, check_flag_is_succes, check_non_null};
+use crate::{
+    check_flag_is_succes, check_non_null, LinearMultistepMethod, NVectorSerial,
+    NVectorSerialHeapAllocated, Realtype, Result, RhsResult, StepKind, WrappingUserData,
+};
 
 #[repr(C)]
 struct CvodeMemoryBlock {
@@ -58,20 +61,48 @@ impl<const SIZE: usize> AbsTolerance<SIZE> {
 /// `N` is the "problem size", that is the dimension of the state space.
 ///
 /// See [crate-level](`crate`) documentation for more.
-pub struct Solver<UserData, const N: usize> {
+pub struct Solver<UserData, F, const N: usize> {
     mem: CvodeMemoryBlockNonNullPtr,
     y0: NVectorSerialHeapAllocated<N>,
     sunmatrix: SUNMatrix,
     linsolver: SUNLinearSolver,
     atol: AbsTolerance<N>,
-    user_data: Pin<Box<UserData>>,
+    user_data: Pin<Box<WrappingUserData<UserData, F>>>,
 }
 
+/// The wrapping function.
+///
+/// Internally used in [`wrap`].
+extern "C" fn wrap_f<UserData, F, const N: usize>(
+    t: Realtype,
+    y: *const NVectorSerial<N>,
+    ydot: *mut NVectorSerial<N>,
+    data: *const WrappingUserData<UserData, F>,
+) -> c_int
+where
+    F: Fn(Realtype, &[Realtype; N], &mut [Realtype; N], &UserData) -> RhsResult,
+{
+    let y = unsafe { &*y }.as_slice();
+    let ydot = unsafe { &mut *ydot }.as_slice_mut();
+    let WrappingUserData {
+        actual_user_data: data,
+        f,
+    } = unsafe { &*data };
+    let res = f(t, y, ydot, data);
+    match res {
+        RhsResult::Ok => 0,
+        RhsResult::RecoverableError(e) => e as c_int,
+        RhsResult::NonRecoverableError(e) => -(e as c_int),
+    }
+}
 
-impl<UserData, const N: usize> Solver<UserData, N> {
+impl<UserData, F, const N: usize> Solver<UserData, F, N>
+where
+    F: Fn(Realtype, &[Realtype; N], &mut [Realtype; N], &UserData) -> RhsResult,
+{
     pub fn new(
         method: LinearMultistepMethod,
-        f: c_wrapping::RhsFCtype<UserData, N>,
+        f: F,
         t0: Realtype,
         y0: &[Realtype; N],
         rtol: Realtype,
@@ -94,7 +125,10 @@ impl<UserData, const N: usize> Solver<UserData, N> {
             let linsolver = unsafe { cvode_5_sys::SUNLinSol_Dense(y0.as_raw(), matrix.as_ptr()) };
             check_non_null(linsolver, "SUNDenseLinearSolver")?
         };
-        let user_data = Box::pin(user_data);
+        let user_data = Box::pin(WrappingUserData {
+            actual_user_data: user_data,
+            f,
+        });
         let res = Solver {
             mem,
             y0,
@@ -104,10 +138,11 @@ impl<UserData, const N: usize> Solver<UserData, N> {
             user_data,
         };
         {
+            let fn_ptr = wrap_f::<UserData, F, N> as extern "C" fn(_, _, _, _) -> _;
             let flag = unsafe {
                 cvode_5_sys::CVodeInit(
                     mem.as_raw(),
-                    Some(std::mem::transmute(f)),
+                    Some(std::mem::transmute(fn_ptr)),
                     t0,
                     res.y0.as_raw(),
                 )
@@ -163,7 +198,7 @@ impl<UserData, const N: usize> Solver<UserData, N> {
     }
 }
 
-impl<UserData, const N: usize> Drop for Solver<UserData, N> {
+impl<UserData, F, const N: usize> Drop for Solver<UserData, F, N> {
     fn drop(&mut self) {
         unsafe { cvode_5_sys::CVodeFree(&mut self.mem.as_raw()) }
         unsafe { cvode_5_sys::SUNLinSolFree(self.linsolver) };
@@ -173,7 +208,7 @@ impl<UserData, const N: usize> Drop for Solver<UserData, N> {
 
 #[cfg(test)]
 mod tests {
-    use crate::{RhsResult,wrap, NVectorSerial};
+    use crate::RhsResult;
 
     use super::*;
 
@@ -187,14 +222,12 @@ mod tests {
         RhsResult::Ok
     }
 
-    wrap!(wrapped_f, f, (), 2);
-
     #[test]
     fn create() {
         let y0 = [0., 1.];
         let _solver = Solver::new(
             LinearMultistepMethod::Adams,
-            wrapped_f,
+            f,
             0.,
             &y0,
             1e-4,
