@@ -8,3 +8,4 @@ edition = "2018"
 
 [dependencies]
 cvode-5-sys = {path = "../cvode-5-sys"}
+array-init = "2.0"

@@ -3,8 +3,8 @@ use std::{convert::TryInto, ffi::c_void, os::raw::c_int, pin::Pin, ptr::NonNull}
 use cvode_5_sys::{SUNLinearSolver, SUNMatrix};
 
 use crate::{
-    check_flag_is_succes, check_non_null, LinearMultistepMethod, NVectorSerial,
-    NVectorSerialHeapAllocated, Realtype, Result, RhsResult, StepKind, WrappingUserData,
+    check_flag_is_succes, check_non_null, AbsTolerance, LinearMultistepMethod, NVectorSerial,
+    NVectorSerialHeapAllocated, Realtype, Result, RhsResult, StepKind,
 };
 
 #[repr(C)]
@@ -34,21 +34,9 @@ impl From<NonNull<CvodeMemoryBlock>> for CvodeMemoryBlockNonNullPtr {
     }
 }
 
-/// An enum representing the choice between a scalar or vector absolute tolerance
-pub enum AbsTolerance<const SIZE: usize> {
-    Scalar(Realtype),
-    Vector(NVectorSerialHeapAllocated<SIZE>),
-}
-
-impl<const SIZE: usize> AbsTolerance<SIZE> {
-    pub fn scalar(atol: Realtype) -> Self {
-        AbsTolerance::Scalar(atol)
-    }
-
-    pub fn vector(atol: &[Realtype; SIZE]) -> Self {
-        let atol = NVectorSerialHeapAllocated::new_from(atol);
-        AbsTolerance::Vector(atol)
-    }
+struct WrappingUserData<UserData, F> {
+    actual_user_data: UserData,
+    f: F,
 }
 
 /// The main struct of the crate. Wraps a sundials solver.

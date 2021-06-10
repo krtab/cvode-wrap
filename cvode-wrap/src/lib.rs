@@ -6,6 +6,7 @@ mod nvector;
 pub use nvector::{NVectorSerial, NVectorSerialHeapAllocated};
 
 pub mod cvode;
+pub mod cvode_sens;
 
 /// The floatting-point type sundials was compiled with
 pub type Realtype = realtype;
@@ -55,16 +56,28 @@ pub enum StepKind {
     OneStep = cvode_5_sys::CV_ONE_STEP,
 }
 
-struct WrappingUserData<UserData, F> {
-    actual_user_data: UserData,
-    f: F,
-}
-
 /// The error type for this crate
 #[derive(Debug)]
 pub enum Error {
     NullPointerError { func_id: &'static str },
     ErrorCode { func_id: &'static str, flag: c_int },
+}
+
+/// An enum representing the choice between a scalar or vector absolute tolerance
+pub enum AbsTolerance<const SIZE: usize> {
+    Scalar(Realtype),
+    Vector(NVectorSerialHeapAllocated<SIZE>),
+}
+
+impl<const SIZE: usize> AbsTolerance<SIZE> {
+    pub fn scalar(atol: Realtype) -> Self {
+        AbsTolerance::Scalar(atol)
+    }
+
+    pub fn vector(atol: &[Realtype; SIZE]) -> Self {
+        let atol = NVectorSerialHeapAllocated::new_from(atol);
+        AbsTolerance::Vector(atol)
+    }
 }
 
 /// A short-hand for `std::result::Result<T, crate::Error>`
