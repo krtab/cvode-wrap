@@ -1,39 +1,5 @@
 A wrapper around the sundials ODE solver.
 
-# Example
+# Examples
 
-An oscillatory 2-D system.
-
-```rust
-use cvode_wrap::*;
-
-let y0 = [0., 1.];
-// define the right-hand-side as a rust function of type RhsF<Realtype, 2>
-fn f(
-  _t: Realtype,
-   y: &[Realtype; 2],
-   ydot: &mut [Realtype; 2],
-   k: &Realtype,
-) -> RhsResult {
-    *ydot = [y[1], -y[0] * k];
-    RhsResult::Ok
-}
-//initialize the solver
-let mut solver = cvode::Solver::new(
-    LinearMultistepMethod::Adams,
-    wrapped_f,
-    0.,
-    &y0,
-    1e-4,
-    AbsTolerance::scalar(1e-4),
-    1e-2,
-)
-.unwrap();
-//and solve
-let ts: Vec<_> = (1..100).collect();
-println!("0,{},{}", y0[0], y0[1]);
-for &t in &ts {
-    let (_tret, &[x, xdot]) = solver.step(t as _, StepKind::Normal).unwrap();
-    println!("{},{},{}", t, x, xdot);
-}
-```
+Examples computing the behavior of an oscillatory system defined by `x'' = -k * x` are included in the examples/ directory. In the example computing the sensitivities, sensitivities are computed with respect to `x(0)`, `x'(0)` and `k`.

@@ -1,12 +1,19 @@
-use std::{os::raw::c_int, ptr::NonNull};
+//! A wrapper around cvode and cvodes from the sundials tool suite.
+//!
+//! Users should be mostly interested in [`SolverSensi`] and [`SolverNoSensi`].
+
+use std::{ffi::c_void, os::raw::c_int, ptr::NonNull};
 
 use sundials_sys::realtype;
 
 mod nvector;
 pub use nvector::{NVectorSerial, NVectorSerialHeapAllocated};
 
-pub mod cvode;
-pub mod cvode_sens;
+mod cvode;
+mod cvode_sens;
+
+pub use cvode::Solver as SolverNoSensi;
+pub use cvode_sens::Solver as SolverSensi;
 
 /// The floatting-point type sundials was compiled with
 pub type Realtype = realtype;
@@ -80,6 +87,29 @@ impl<const SIZE: usize> AbsTolerance<SIZE> {
     }
 }
 
+/// An enum representing the choice between scalars or vectors absolute tolerances
+/// for sensitivities.
+pub enum SensiAbsTolerance<const SIZE: usize, const N_SENSI: usize> {
+    Scalar([Realtype; N_SENSI]),
+    Vector([NVectorSerialHeapAllocated<SIZE>; N_SENSI]),
+}
+
+impl<const SIZE: usize, const N_SENSI: usize> SensiAbsTolerance<SIZE, N_SENSI> {
+    pub fn scalar(atol: [Realtype; N_SENSI]) -> Self {
+        SensiAbsTolerance::Scalar(atol)
+    }
+
+    pub fn vector(atol: &[[Realtype; SIZE]; N_SENSI]) -> Self {
+        SensiAbsTolerance::Vector(
+            array_init::from_iter(
+                atol.iter()
+                    .map(|arr| NVectorSerialHeapAllocated::new_from(arr)),
+            )
+            .unwrap(),
+        )
+    }
+}
+
 /// A short-hand for `std::result::Result<T, crate::Error>`
 pub type Result<T> = std::result::Result<T, Error>;
 
@@ -92,5 +122,32 @@ fn check_flag_is_succes(flag: c_int, func_id: &'static str) -> Result<()> {
         Ok(())
     } else {
         Err(Error::ErrorCode { flag, func_id })
+    }
+}
+
+#[repr(C)]
+struct CvodeMemoryBlock {
+    _private: [u8; 0],
+}
+
+#[repr(transparent)]
+#[derive(Debug, Clone, Copy)]
+struct CvodeMemoryBlockNonNullPtr {
+    ptr: NonNull<CvodeMemoryBlock>,
+}
+
+impl CvodeMemoryBlockNonNullPtr {
+    fn new(ptr: NonNull<CvodeMemoryBlock>) -> Self {
+        Self { ptr }
+    }
+
+    fn as_raw(self) -> *mut c_void {
+        self.ptr.as_ptr() as *mut c_void
+    }
+}
+
+impl From<NonNull<CvodeMemoryBlock>> for CvodeMemoryBlockNonNullPtr {
+    fn from(x: NonNull<CvodeMemoryBlock>) -> Self {
+        Self::new(x)
     }
 }

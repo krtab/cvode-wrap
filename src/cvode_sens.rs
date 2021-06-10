@@ -1,59 +1,14 @@
-use std::{convert::TryInto, ffi::c_void, os::raw::c_int, pin::Pin, ptr::NonNull};
+//! Wrapper around cvodeS, with sensitivities
+
+use std::{convert::TryInto, os::raw::c_int, pin::Pin};
 
 use sundials_sys::{SUNLinearSolver, SUNMatrix, CV_STAGGERED};
 
 use crate::{
-    check_flag_is_succes, check_non_null, AbsTolerance, LinearMultistepMethod, NVectorSerial,
-    NVectorSerialHeapAllocated, Realtype, Result, RhsResult, StepKind,
+    check_flag_is_succes, check_non_null, AbsTolerance, CvodeMemoryBlock,
+    CvodeMemoryBlockNonNullPtr, LinearMultistepMethod, NVectorSerial, NVectorSerialHeapAllocated,
+    Realtype, Result, RhsResult, SensiAbsTolerance, StepKind,
 };
-
-#[repr(C)]
-struct CvodeMemoryBlock {
-    _private: [u8; 0],
-}
-
-#[repr(transparent)]
-#[derive(Debug, Clone, Copy)]
-struct CvodeMemoryBlockNonNullPtr {
-    ptr: NonNull<CvodeMemoryBlock>,
-}
-
-impl CvodeMemoryBlockNonNullPtr {
-    fn new(ptr: NonNull<CvodeMemoryBlock>) -> Self {
-        Self { ptr }
-    }
-
-    fn as_raw(self) -> *mut c_void {
-        self.ptr.as_ptr() as *mut c_void
-    }
-}
-
-pub enum SensiAbsTolerance<const SIZE: usize, const N_SENSI: usize> {
-    Scalar([Realtype; N_SENSI]),
-    Vector([NVectorSerialHeapAllocated<SIZE>; N_SENSI]),
-}
-
-impl<const SIZE: usize, const N_SENSI: usize> SensiAbsTolerance<SIZE, N_SENSI> {
-    pub fn scalar(atol: [Realtype; N_SENSI]) -> Self {
-        SensiAbsTolerance::Scalar(atol)
-    }
-
-    pub fn vector(atol: &[[Realtype; SIZE]; N_SENSI]) -> Self {
-        SensiAbsTolerance::Vector(
-            array_init::from_iter(
-                atol.iter()
-                    .map(|arr| NVectorSerialHeapAllocated::new_from(arr)),
-            )
-            .unwrap(),
-        )
-    }
-}
-
-impl From<NonNull<CvodeMemoryBlock>> for CvodeMemoryBlockNonNullPtr {
-    fn from(x: NonNull<CvodeMemoryBlock>) -> Self {
-        Self::new(x)
-    }
-}
 
 struct WrappingUserData<UserData, F, FS> {
     actual_user_data: UserData,
@@ -61,16 +16,20 @@ struct WrappingUserData<UserData, F, FS> {
     fs: FS,
 }
 
-/// The main struct of the crate. Wraps a sundials solver.
+/// The ODE solver with sensitivities.
 ///
-/// Args
-/// ----
-/// `UserData` is the type of the supplementary arguments for the
+/// # Type Arguments
+///
+/// - `F` is the type of the right-hand side function
+///
+/// - `FS` is the type of the sensitivities right-hand side function
+///
+///  - `UserData` is the type of the supplementary arguments for the
 /// right-hand-side. If unused, should be `()`.
 ///
-/// `N` is the "problem size", that is the dimension of the state space.
+/// - `N` is the "problem size", that is the dimension of the state space.
 ///
-/// See [crate-level](`crate`) documentation for more.
+/// - `N_SENSI` is the number of sensitivities computed
 pub struct Solver<UserData, F, FS, const N: usize, const N_SENSI: usize> {
     mem: CvodeMemoryBlockNonNullPtr,
     y0: NVectorSerialHeapAllocated<N>,
@@ -83,9 +42,6 @@ pub struct Solver<UserData, F, FS, const N: usize, const N_SENSI: usize> {
     sensi_out_buffer: [NVectorSerialHeapAllocated<N>; N_SENSI],
 }
 
-/// The wrapping function.
-///
-/// Internally used in [`wrap`].
 extern "C" fn wrap_f<UserData, F, FS, const N: usize>(
     t: Realtype,
     y: *const NVectorSerial<N>,
@@ -168,6 +124,7 @@ where
         &UserData,
     ) -> RhsResult,
 {
+    /// Creates a new solver.
     #[allow(clippy::clippy::too_many_arguments)]
     pub fn new(
         method: LinearMultistepMethod,
@@ -293,6 +250,12 @@ where
         Ok(res)
     }
 
+    /// Takes a step according to `step_kind` (see [`StepKind`]).
+    ///
+    /// Returns a tuple `(t_out,&y(t_out),[&dy_dp(tout)])` where `t_out` is the time
+    /// reached by the solver as dictated by `step_kind`, `y(t_out)` is an
+    /// array of the state variables at that time, and the i-th `dy_dp(tout)` is an array
+    /// of the sensitivities of all variables with respect to parameter i.
     #[allow(clippy::clippy::type_complexity)]
     pub fn step(
         &mut self,
@@ -379,6 +342,7 @@ mod tests {
             AbsTolerance::scalar(1e-4),
             SensiAbsTolerance::scalar([1e-4; 4]),
             (),
-        ).unwrap();
+        )
+        .unwrap();
     }
 }

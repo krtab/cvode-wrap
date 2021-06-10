@@ -1,54 +1,30 @@
-use std::{convert::TryInto, ffi::c_void, os::raw::c_int, pin::Pin, ptr::NonNull};
+//! Wrapper around cvode, without sensitivities
+
+use std::{convert::TryInto, os::raw::c_int, pin::Pin};
 
 use sundials_sys::{SUNLinearSolver, SUNMatrix};
 
 use crate::{
-    check_flag_is_succes, check_non_null, AbsTolerance, LinearMultistepMethod, NVectorSerial,
-    NVectorSerialHeapAllocated, Realtype, Result, RhsResult, StepKind,
+    check_flag_is_succes, check_non_null, AbsTolerance, CvodeMemoryBlock,
+    CvodeMemoryBlockNonNullPtr, LinearMultistepMethod, NVectorSerial, NVectorSerialHeapAllocated,
+    Realtype, Result, RhsResult, StepKind,
 };
-
-#[repr(C)]
-struct CvodeMemoryBlock {
-    _private: [u8; 0],
-}
-
-#[repr(transparent)]
-#[derive(Debug, Clone, Copy)]
-struct CvodeMemoryBlockNonNullPtr {
-    ptr: NonNull<CvodeMemoryBlock>,
-}
-
-impl CvodeMemoryBlockNonNullPtr {
-    fn new(ptr: NonNull<CvodeMemoryBlock>) -> Self {
-        Self { ptr }
-    }
-
-    fn as_raw(self) -> *mut c_void {
-        self.ptr.as_ptr() as *mut c_void
-    }
-}
-
-impl From<NonNull<CvodeMemoryBlock>> for CvodeMemoryBlockNonNullPtr {
-    fn from(x: NonNull<CvodeMemoryBlock>) -> Self {
-        Self::new(x)
-    }
-}
 
 struct WrappingUserData<UserData, F> {
     actual_user_data: UserData,
     f: F,
 }
 
-/// The main struct of the crate. Wraps a sundials solver.
+/// The ODE solver without sensitivities.
 ///
-/// Args
-/// ----
-/// `UserData` is the type of the supplementary arguments for the
+/// # Type Arguments
+///
+/// - `F` is the type of the right-hand side function
+///
+///  - `UserData` is the type of the supplementary arguments for the
 /// right-hand-side. If unused, should be `()`.
 ///
-/// `N` is the "problem size", that is the dimension of the state space.
-///
-/// See [crate-level](`crate`) documentation for more.
+/// - `N` is the "problem size", that is the dimension of the state space.
 pub struct Solver<UserData, F, const N: usize> {
     mem: CvodeMemoryBlockNonNullPtr,
     y0: NVectorSerialHeapAllocated<N>,
@@ -58,9 +34,6 @@ pub struct Solver<UserData, F, const N: usize> {
     user_data: Pin<Box<WrappingUserData<UserData, F>>>,
 }
 
-/// The wrapping function.
-///
-/// Internally used in [`wrap`].
 extern "C" fn wrap_f<UserData, F, const N: usize>(
     t: Realtype,
     y: *const NVectorSerial<N>,
@@ -88,6 +61,7 @@ impl<UserData, F, const N: usize> Solver<UserData, F, N>
 where
     F: Fn(Realtype, &[Realtype; N], &mut [Realtype; N], &UserData) -> RhsResult,
 {
+    /// Create a new solver.
     pub fn new(
         method: LinearMultistepMethod,
         f: F,
@@ -170,6 +144,11 @@ where
         Ok(res)
     }
 
+    /// Takes a step according to `step_kind` (see [`StepKind`]).
+    ///
+    /// Returns a tuple `(t_out,&y(t_out))` where `t_out` is the time
+    /// reached by the solver as dictated by `step_kind`, and `y(t_out)` is an
+    /// array of the state variables at that time.
     pub fn step(
         &mut self,
         tout: Realtype,
@@ -225,6 +204,7 @@ mod tests {
             1e-4,
             AbsTolerance::Scalar(1e-4),
             (),
-        ).unwrap();
+        )
+        .unwrap();
     }
 }
