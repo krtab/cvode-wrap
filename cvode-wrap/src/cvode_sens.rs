@@ -288,7 +288,7 @@ where
                 let flag = unsafe {
                     sundials_sys::CVodeSensSVtolerances(mem.as_raw(), rtol, atol.as_ptr() as _)
                 };
-                check_flag_is_succes(flag, "CVodeSVtolerances")?;
+                check_flag_is_succes(flag, "CVodeSensSVtolerances")?;
             }
         }
         {
