@@ -266,17 +266,6 @@ where
                 check_flag_is_succes(flag, "CVodeSVtolerances")?;
             }
         }
-        match &res.atol {
-            &AbsTolerance::Scalar(atol) => {
-                let flag = unsafe { sundials_sys::CVodeSStolerances(mem.as_raw(), rtol, atol) };
-                check_flag_is_succes(flag, "CVodeSStolerances")?;
-            }
-            AbsTolerance::Vector(atol) => {
-                let flag =
-                    unsafe { sundials_sys::CVodeSVtolerances(mem.as_raw(), rtol, atol.as_raw()) };
-                check_flag_is_succes(flag, "CVodeSVtolerances")?;
-            }
-        }
         match &res.atol_sens {
             SensiAbsTolerance::Scalar(atol) => {
                 let flag = unsafe {
