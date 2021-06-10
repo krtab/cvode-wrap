@@ -4,28 +4,30 @@ use std::{
     ptr::NonNull,
 };
 
-use cvode_5_sys::realtype;
+use sundials_sys::realtype;
 
 /// A sundials `N_Vector_Serial`.
 #[repr(transparent)]
 #[derive(Debug)]
 pub struct NVectorSerial<const SIZE: usize> {
-    inner: cvode_5_sys::_generic_N_Vector,
+    inner: sundials_sys::_generic_N_Vector,
 }
 
 impl<const SIZE: usize> NVectorSerial<SIZE> {
-    pub(crate) unsafe fn as_raw(&self) -> cvode_5_sys::N_Vector {
+    pub(crate) unsafe fn as_raw(&self) -> sundials_sys::N_Vector {
         std::mem::transmute(&self.inner)
     }
 
     /// Returns a reference to the inner slice of the vector.
     pub fn as_slice(&self) -> &[realtype; SIZE] {
-        unsafe { &*(cvode_5_sys::N_VGetArrayPointer_Serial(self.as_raw()) as *const [f64; SIZE]) }
+        unsafe { &*(sundials_sys::N_VGetArrayPointer_Serial(self.as_raw()) as *const [f64; SIZE]) }
     }
 
     /// Returns a mutable reference to the inner slice of the vector.
     pub fn as_slice_mut(&mut self) -> &mut [realtype; SIZE] {
-        unsafe { &mut *(cvode_5_sys::N_VGetArrayPointer_Serial(self.as_raw()) as *mut [f64; SIZE]) }
+        unsafe {
+            &mut *(sundials_sys::N_VGetArrayPointer_Serial(self.as_raw()) as *mut [f64; SIZE])
+        }
     }
 }
 
@@ -52,7 +54,7 @@ impl<const SIZE: usize> DerefMut for NVectorSerialHeapAllocated<SIZE> {
 
 impl<const SIZE: usize> NVectorSerialHeapAllocated<SIZE> {
     unsafe fn new_inner_uninitialized() -> NonNull<NVectorSerial<SIZE>> {
-        let raw_c = cvode_5_sys::N_VNew_Serial(SIZE.try_into().unwrap());
+        let raw_c = sundials_sys::N_VNew_Serial(SIZE.try_into().unwrap());
         NonNull::new(raw_c as *mut NVectorSerial<SIZE>).unwrap()
     }
 
@@ -60,7 +62,7 @@ impl<const SIZE: usize> NVectorSerialHeapAllocated<SIZE> {
     pub fn new() -> Self {
         let inner = unsafe {
             let x = Self::new_inner_uninitialized();
-            let ptr = cvode_5_sys::N_VGetArrayPointer_Serial(x.as_ref().as_raw());
+            let ptr = sundials_sys::N_VGetArrayPointer_Serial(x.as_ref().as_raw());
             for off in 0..SIZE {
                 *ptr.add(off) = 0.;
             }
@@ -73,7 +75,7 @@ impl<const SIZE: usize> NVectorSerialHeapAllocated<SIZE> {
     pub fn new_from(data: &[realtype; SIZE]) -> Self {
         let inner = unsafe {
             let x = Self::new_inner_uninitialized();
-            let ptr = cvode_5_sys::N_VGetArrayPointer_Serial(x.as_ref().as_raw());
+            let ptr = sundials_sys::N_VGetArrayPointer_Serial(x.as_ref().as_raw());
             std::ptr::copy_nonoverlapping(data.as_ptr(), ptr, SIZE);
             x
         };
@@ -83,6 +85,6 @@ impl<const SIZE: usize> NVectorSerialHeapAllocated<SIZE> {
 
 impl<const SIZE: usize> Drop for NVectorSerialHeapAllocated<SIZE> {
     fn drop(&mut self) {
-        unsafe { cvode_5_sys::N_VDestroy(self.as_raw()) }
+        unsafe { sundials_sys::N_VDestroy(self.as_raw()) }
     }
 }

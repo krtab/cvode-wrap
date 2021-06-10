@@ -1,6 +1,6 @@
 use std::{convert::TryInto, ffi::c_void, os::raw::c_int, pin::Pin, ptr::NonNull};
 
-use cvode_5_sys::{SUNLinearSolver, SUNMatrix};
+use sundials_sys::{SUNLinearSolver, SUNMatrix};
 
 use crate::{
     check_flag_is_succes, check_non_null, AbsTolerance, LinearMultistepMethod, NVectorSerial,
@@ -99,18 +99,18 @@ where
     ) -> Result<Self> {
         assert_eq!(y0.len(), N);
         let mem: CvodeMemoryBlockNonNullPtr = {
-            let mem_maybenull = unsafe { cvode_5_sys::CVodeCreate(method as c_int) };
+            let mem_maybenull = unsafe { sundials_sys::CVodeCreate(method as c_int) };
             check_non_null(mem_maybenull as *mut CvodeMemoryBlock, "CVodeCreate")?.into()
         };
         let y0 = NVectorSerialHeapAllocated::new_from(y0);
         let matrix = {
             let matrix = unsafe {
-                cvode_5_sys::SUNDenseMatrix(N.try_into().unwrap(), N.try_into().unwrap())
+                sundials_sys::SUNDenseMatrix(N.try_into().unwrap(), N.try_into().unwrap())
             };
             check_non_null(matrix, "SUNDenseMatrix")?
         };
         let linsolver = {
-            let linsolver = unsafe { cvode_5_sys::SUNLinSol_Dense(y0.as_raw(), matrix.as_ptr()) };
+            let linsolver = unsafe { sundials_sys::SUNLinSol_Dense(y0.as_raw(), matrix.as_ptr()) };
             check_non_null(linsolver, "SUNDenseLinearSolver")?
         };
         let user_data = Box::pin(WrappingUserData {
@@ -128,7 +128,7 @@ where
         {
             let fn_ptr = wrap_f::<UserData, F, N> as extern "C" fn(_, _, _, _) -> _;
             let flag = unsafe {
-                cvode_5_sys::CVodeInit(
+                sundials_sys::CVodeInit(
                     mem.as_raw(),
                     Some(std::mem::transmute(fn_ptr)),
                     t0,
@@ -139,24 +139,28 @@ where
         }
         match &res.atol {
             &AbsTolerance::Scalar(atol) => {
-                let flag = unsafe { cvode_5_sys::CVodeSStolerances(mem.as_raw(), rtol, atol) };
+                let flag = unsafe { sundials_sys::CVodeSStolerances(mem.as_raw(), rtol, atol) };
                 check_flag_is_succes(flag, "CVodeSStolerances")?;
             }
             AbsTolerance::Vector(atol) => {
                 let flag =
-                    unsafe { cvode_5_sys::CVodeSVtolerances(mem.as_raw(), rtol, atol.as_raw()) };
+                    unsafe { sundials_sys::CVodeSVtolerances(mem.as_raw(), rtol, atol.as_raw()) };
                 check_flag_is_succes(flag, "CVodeSVtolerances")?;
             }
         }
         {
             let flag = unsafe {
-                cvode_5_sys::CVodeSetLinearSolver(mem.as_raw(), linsolver.as_ptr(), matrix.as_ptr())
+                sundials_sys::CVodeSetLinearSolver(
+                    mem.as_raw(),
+                    linsolver.as_ptr(),
+                    matrix.as_ptr(),
+                )
             };
             check_flag_is_succes(flag, "CVodeSetLinearSolver")?;
         }
         {
             let flag = unsafe {
-                cvode_5_sys::CVodeSetUserData(
+                sundials_sys::CVodeSetUserData(
                     mem.as_raw(),
                     std::mem::transmute(res.user_data.as_ref().get_ref()),
                 )
@@ -173,7 +177,7 @@ where
     ) -> Result<(Realtype, &[Realtype; N])> {
         let mut tret = 0.;
         let flag = unsafe {
-            cvode_5_sys::CVode(
+            sundials_sys::CVode(
                 self.mem.as_raw(),
                 tout,
                 self.y0.as_raw(),
@@ -188,9 +192,9 @@ where
 
 impl<UserData, F, const N: usize> Drop for Solver<UserData, F, N> {
     fn drop(&mut self) {
-        unsafe { cvode_5_sys::CVodeFree(&mut self.mem.as_raw()) }
-        unsafe { cvode_5_sys::SUNLinSolFree(self.linsolver) };
-        unsafe { cvode_5_sys::SUNMatDestroy(self.sunmatrix) };
+        unsafe { sundials_sys::CVodeFree(&mut self.mem.as_raw()) }
+        unsafe { sundials_sys::SUNLinSolFree(self.linsolver) };
+        unsafe { sundials_sys::SUNMatDestroy(self.sunmatrix) };
     }
 }
 

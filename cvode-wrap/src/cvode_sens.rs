@@ -1,6 +1,6 @@
 use std::{convert::TryInto, ffi::c_void, os::raw::c_int, pin::Pin, ptr::NonNull};
 
-use cvode_5_sys::{N_VPrint, SUNLinearSolver, SUNMatrix, CV_STAGGERED};
+use sundials_sys::{SUNLinearSolver, SUNMatrix, CV_STAGGERED};
 
 use crate::{
     check_flag_is_succes, check_non_null, AbsTolerance, LinearMultistepMethod, NVectorSerial,
@@ -183,7 +183,7 @@ where
     ) -> Result<Self> {
         assert_eq!(y0.len(), N);
         let mem: CvodeMemoryBlockNonNullPtr = {
-            let mem_maybenull = unsafe { cvode_5_sys::CVodeCreate(method as c_int) };
+            let mem_maybenull = unsafe { sundials_sys::CVodeCreate(method as c_int) };
             check_non_null(mem_maybenull as *mut CvodeMemoryBlock, "CVodeCreate")?.into()
         };
         let y0 = NVectorSerialHeapAllocated::new_from(y0);
@@ -196,12 +196,12 @@ where
         );
         let matrix = {
             let matrix = unsafe {
-                cvode_5_sys::SUNDenseMatrix(N.try_into().unwrap(), N.try_into().unwrap())
+                sundials_sys::SUNDenseMatrix(N.try_into().unwrap(), N.try_into().unwrap())
             };
             check_non_null(matrix, "SUNDenseMatrix")?
         };
         let linsolver = {
-            let linsolver = unsafe { cvode_5_sys::SUNLinSol_Dense(y0.as_raw(), matrix.as_ptr()) };
+            let linsolver = unsafe { sundials_sys::SUNLinSol_Dense(y0.as_raw(), matrix.as_ptr()) };
             check_non_null(linsolver, "SUNDenseLinearSolver")?
         };
         let user_data = Box::pin(WrappingUserData {
@@ -222,20 +222,17 @@ where
         };
         {
             let flag = unsafe {
-                cvode_5_sys::CVodeSetUserData(
+                sundials_sys::CVodeSetUserData(
                     mem.as_raw(),
                     res.user_data.as_ref().get_ref() as *const _ as _,
                 )
             };
             check_flag_is_succes(flag, "CVodeSetUserData")?;
         }
-        for v in res.y_s0.as_ref() {
-            unsafe { N_VPrint(v.as_raw()) }
-        }
         {
             let fn_ptr = wrap_f::<UserData, F, FS, N> as extern "C" fn(_, _, _, _) -> _;
             let flag = unsafe {
-                cvode_5_sys::CVodeInit(
+                sundials_sys::CVodeInit(
                     mem.as_raw(),
                     Some(std::mem::transmute(fn_ptr)),
                     t0,
@@ -248,7 +245,7 @@ where
             let fn_ptr = wrap_f_sens::<UserData, F, FS, N, N_SENSI>
                 as extern "C" fn(_, _, _, _, _, _, _, _, _) -> _;
             let flag = unsafe {
-                cvode_5_sys::CVodeSensInit(
+                sundials_sys::CVodeSensInit(
                     mem.as_raw(),
                     N_SENSI as c_int,
                     CV_STAGGERED as _,
@@ -256,47 +253,51 @@ where
                     res.y_s0.as_ptr() as _,
                 )
             };
-            check_flag_is_succes(flag, "CVodeInit")?;
+            check_flag_is_succes(flag, "CVodeSensInit")?;
         }
         match &res.atol {
             &AbsTolerance::Scalar(atol) => {
-                let flag = unsafe { cvode_5_sys::CVodeSStolerances(mem.as_raw(), rtol, atol) };
+                let flag = unsafe { sundials_sys::CVodeSStolerances(mem.as_raw(), rtol, atol) };
                 check_flag_is_succes(flag, "CVodeSStolerances")?;
             }
             AbsTolerance::Vector(atol) => {
                 let flag =
-                    unsafe { cvode_5_sys::CVodeSVtolerances(mem.as_raw(), rtol, atol.as_raw()) };
+                    unsafe { sundials_sys::CVodeSVtolerances(mem.as_raw(), rtol, atol.as_raw()) };
                 check_flag_is_succes(flag, "CVodeSVtolerances")?;
             }
         }
         match &res.atol {
             &AbsTolerance::Scalar(atol) => {
-                let flag = unsafe { cvode_5_sys::CVodeSStolerances(mem.as_raw(), rtol, atol) };
+                let flag = unsafe { sundials_sys::CVodeSStolerances(mem.as_raw(), rtol, atol) };
                 check_flag_is_succes(flag, "CVodeSStolerances")?;
             }
             AbsTolerance::Vector(atol) => {
                 let flag =
-                    unsafe { cvode_5_sys::CVodeSVtolerances(mem.as_raw(), rtol, atol.as_raw()) };
+                    unsafe { sundials_sys::CVodeSVtolerances(mem.as_raw(), rtol, atol.as_raw()) };
                 check_flag_is_succes(flag, "CVodeSVtolerances")?;
             }
         }
         match &res.atol_sens {
             SensiAbsTolerance::Scalar(atol) => {
                 let flag = unsafe {
-                    cvode_5_sys::CVodeSensSStolerances(mem.as_raw(), rtol, atol.as_ptr() as _)
+                    sundials_sys::CVodeSensSStolerances(mem.as_raw(), rtol, atol.as_ptr() as _)
                 };
                 check_flag_is_succes(flag, "CVodeSensSStolerances")?;
             }
             SensiAbsTolerance::Vector(atol) => {
                 let flag = unsafe {
-                    cvode_5_sys::CVodeSensSVtolerances(mem.as_raw(), rtol, atol.as_ptr() as _)
+                    sundials_sys::CVodeSensSVtolerances(mem.as_raw(), rtol, atol.as_ptr() as _)
                 };
                 check_flag_is_succes(flag, "CVodeSVtolerances")?;
             }
         }
         {
             let flag = unsafe {
-                cvode_5_sys::CVodeSetLinearSolver(mem.as_raw(), linsolver.as_ptr(), matrix.as_ptr())
+                sundials_sys::CVodeSetLinearSolver(
+                    mem.as_raw(),
+                    linsolver.as_ptr(),
+                    matrix.as_ptr(),
+                )
             };
             check_flag_is_succes(flag, "CVodeSetLinearSolver")?;
         }
@@ -311,7 +312,7 @@ where
     ) -> Result<(Realtype, &[Realtype; N], [&[Realtype; N]; N_SENSI])> {
         let mut tret = 0.;
         let flag = unsafe {
-            cvode_5_sys::CVode(
+            sundials_sys::CVode(
                 self.mem.as_raw(),
                 tout,
                 self.y0.as_raw(),
@@ -321,7 +322,7 @@ where
         };
         check_flag_is_succes(flag, "CVode")?;
         let flag = unsafe {
-            cvode_5_sys::CVodeGetSens(
+            sundials_sys::CVodeGetSens(
                 self.mem.as_raw(),
                 &mut tret,
                 self.sensi_out_buffer.as_mut_ptr() as _,
@@ -338,9 +339,9 @@ impl<UserData, F, FS, const N: usize, const N_SENSI: usize> Drop
     for Solver<UserData, F, FS, N, N_SENSI>
 {
     fn drop(&mut self) {
-        unsafe { cvode_5_sys::CVodeFree(&mut self.mem.as_raw()) }
-        unsafe { cvode_5_sys::SUNLinSolFree(self.linsolver) };
-        unsafe { cvode_5_sys::SUNMatDestroy(self.sunmatrix) };
+        unsafe { sundials_sys::CVodeFree(&mut self.mem.as_raw()) }
+        unsafe { sundials_sys::SUNLinSolFree(self.linsolver) };
+        unsafe { sundials_sys::SUNMatDestroy(self.sunmatrix) };
     }
 }
 

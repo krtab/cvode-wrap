@@ -10,7 +10,7 @@ fn main() {
         RhsResult::Ok
     }
     // If there is any command line argument compute the sensitivities, else don't.
-    if args().nth(1).is_none() {
+    if false && args().nth(1).is_none() {
         //initialize the solver
         let mut solver = cvode::Solver::new(
             LinearMultistepMethod::Adams,
