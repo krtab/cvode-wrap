@@ -379,6 +379,6 @@ mod tests {
             AbsTolerance::scalar(1e-4),
             SensiAbsTolerance::scalar([1e-4; 4]),
             (),
-        );
+        ).unwrap();
     }
 }

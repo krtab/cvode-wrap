@@ -225,6 +225,6 @@ mod tests {
             1e-4,
             AbsTolerance::Scalar(1e-4),
             (),
-        );
+        ).unwrap();
     }
 }
