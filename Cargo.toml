@@ -1,6 +1,5 @@
 [workspace]
 members = [
-    "cvode-5-sys",
     "cvode-wrap",
     "example"
 ]
