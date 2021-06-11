@@ -1,6 +1,11 @@
 //! A wrapper around cvode and cvodes from the sundials tool suite.
 //!
 //! Users should be mostly interested in [`SolverSensi`] and [`SolverNoSensi`].
+//!
+//! # Building sundials
+//!
+//! To build sundials, activate the `sundials-sys/build_libraries` feature.
+//!
 //! # Examples
 //!
 //! ## Oscillator

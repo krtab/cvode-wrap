@@ -2,6 +2,10 @@ A wrapper around the cvode(S) ODE solver from sundials.
 
 [ [documentation](https://docs.rs/cvode-wrap) ] [ [lib.rs](https://lib.rs/crates/cvode-wrap) ] [ [git repository](https://gitlab.inria.fr/InBio/Public/cvode-rust-wrap) ]
 
+# Building sundials
+
+To build sundials, activate the `sundials-sys/build_libraries` feature.
+
 # Examples
 
 ## Oscillator
