@@ -1,0 +1,8 @@
+stages:
+  - build
+
+rust-latest:
+  stage: build
+  image: rust:latest
+  script:
+    - cargo test --verbose --features "sundials-sys/build-libraries"
