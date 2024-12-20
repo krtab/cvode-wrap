@@ -2,12 +2,12 @@
 
 use std::{convert::TryInto, os::raw::c_int, pin::Pin};
 
-use sundials_sys::{SUNLinearSolver, SUNMatrix};
+use sundials_sys::{SUNComm, SUNContext, SUNLinearSolver, SUNMatrix};
 
 use crate::{
-    check_flag_is_succes, check_non_null, AbsTolerance, CvodeMemoryBlock,
-    CvodeMemoryBlockNonNullPtr, LinearMultistepMethod, NVectorSerial, NVectorSerialHeapAllocated,
-    Realtype, Result, RhsResult, StepKind,
+    check_flag_is_succes, check_non_null, sundials_create_context, sundials_free_context,
+    AbsTolerance, CvodeMemoryBlock, CvodeMemoryBlockNonNullPtr, LinearMultistepMethod,
+    NVectorSerial, NVectorSerialHeapAllocated, Realtype, Result, RhsResult, StepKind,
 };
 
 struct WrappingUserData<UserData, F> {
@@ -32,6 +32,7 @@ pub struct Solver<UserData, F, const N: usize> {
     linsolver: SUNLinearSolver,
     atol: AbsTolerance<N>,
     user_data: Pin<Box<WrappingUserData<UserData, F>>>,
+    context: SUNContext,
 }
 
 extern "C" fn wrap_f<UserData, F, const N: usize>(
@@ -71,20 +72,24 @@ where
         atol: AbsTolerance<N>,
         user_data: UserData,
     ) -> Result<Self> {
+        // Create context, required from version 6 and above on
+        let context = sundials_create_context()?;
+
         assert_eq!(y0.len(), N);
         let mem: CvodeMemoryBlockNonNullPtr = {
-            let mem_maybenull = unsafe { sundials_sys::CVodeCreate(method as c_int) };
+            let mem_maybenull = unsafe { sundials_sys::CVodeCreate(method as c_int, context) };
             check_non_null(mem_maybenull as *mut CvodeMemoryBlock, "CVodeCreate")?.into()
         };
-        let y0 = NVectorSerialHeapAllocated::new_from(y0);
+        let y0 = NVectorSerialHeapAllocated::new_from(y0, context);
         let matrix = {
             let matrix = unsafe {
-                sundials_sys::SUNDenseMatrix(N.try_into().unwrap(), N.try_into().unwrap())
+                sundials_sys::SUNDenseMatrix(N.try_into().unwrap(), N.try_into().unwrap(), context)
             };
             check_non_null(matrix, "SUNDenseMatrix")?
         };
         let linsolver = {
-            let linsolver = unsafe { sundials_sys::SUNLinSol_Dense(y0.as_raw(), matrix.as_ptr()) };
+            let linsolver =
+                unsafe { sundials_sys::SUNLinSol_Dense(y0.as_raw(), matrix.as_ptr(), context) };
             check_non_null(linsolver, "SUNDenseLinearSolver")?
         };
         let user_data = Box::pin(WrappingUserData {
@@ -98,6 +103,7 @@ where
             linsolver: linsolver.as_ptr(),
             atol,
             user_data,
+            context,
         };
         {
             let fn_ptr = wrap_f::<UserData, F, N> as extern "C" fn(_, _, _, _) -> _;
@@ -174,6 +180,7 @@ impl<UserData, F, const N: usize> Drop for Solver<UserData, F, N> {
         unsafe { sundials_sys::CVodeFree(&mut self.mem.as_raw()) }
         unsafe { sundials_sys::SUNLinSolFree(self.linsolver) };
         unsafe { sundials_sys::SUNMatDestroy(self.sunmatrix) };
+        sundials_free_context(self.context);
     }
 }
 

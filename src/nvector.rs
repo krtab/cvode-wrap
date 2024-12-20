@@ -4,7 +4,7 @@ use std::{
     ptr::NonNull,
 };
 
-use sundials_sys::realtype;
+use sundials_sys::{realtype, SUNContext};
 
 /// A sundials `N_Vector_Serial`.
 #[repr(transparent)]
@@ -53,15 +53,15 @@ impl<const SIZE: usize> DerefMut for NVectorSerialHeapAllocated<SIZE> {
 }
 
 impl<const SIZE: usize> NVectorSerialHeapAllocated<SIZE> {
-    unsafe fn new_inner_uninitialized() -> NonNull<NVectorSerial<SIZE>> {
-        let raw_c = sundials_sys::N_VNew_Serial(SIZE.try_into().unwrap());
+    unsafe fn new_inner_uninitialized(context: SUNContext) -> NonNull<NVectorSerial<SIZE>> {
+        let raw_c = sundials_sys::N_VNew_Serial(SIZE.try_into().unwrap(), context);
         NonNull::new(raw_c as *mut NVectorSerial<SIZE>).unwrap()
     }
 
     /// Creates a new vector, filled with 0.
-    pub fn new() -> Self {
+    pub fn new(context: SUNContext) -> Self {
         let inner = unsafe {
-            let x = Self::new_inner_uninitialized();
+            let x = Self::new_inner_uninitialized(context);
             let ptr = sundials_sys::N_VGetArrayPointer_Serial(x.as_ref().as_raw());
             for off in 0..SIZE {
                 *ptr.add(off) = 0.;
@@ -72,9 +72,9 @@ impl<const SIZE: usize> NVectorSerialHeapAllocated<SIZE> {
     }
 
     /// Creates a new vector, filled with data from `data`.
-    pub fn new_from(data: &[realtype; SIZE]) -> Self {
+    pub fn new_from(data: &[realtype; SIZE], context: SUNContext) -> Self {
         let inner = unsafe {
-            let x = Self::new_inner_uninitialized();
+            let x = Self::new_inner_uninitialized(context);
             let ptr = sundials_sys::N_VGetArrayPointer_Serial(x.as_ref().as_raw());
             std::ptr::copy_nonoverlapping(data.as_ptr(), ptr, SIZE);
             x

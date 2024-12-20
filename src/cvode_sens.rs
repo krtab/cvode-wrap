@@ -5,7 +5,7 @@ use std::{convert::TryInto, os::raw::c_int, pin::Pin};
 use sundials_sys::{SUNLinearSolver, SUNMatrix, CV_STAGGERED};
 
 use crate::{
-    check_flag_is_succes, check_non_null, AbsTolerance, CvodeMemoryBlock,
+    check_flag_is_succes, check_non_null, sundials_create_context, AbsTolerance, CvodeMemoryBlock,
     CvodeMemoryBlockNonNullPtr, LinearMultistepMethod, NVectorSerial, NVectorSerialHeapAllocated,
     Realtype, Result, RhsResult, SensiAbsTolerance, StepKind,
 };
@@ -139,26 +139,28 @@ where
         user_data: UserData,
     ) -> Result<Self> {
         assert_eq!(y0.len(), N);
+        let context = sundials_create_context()?;
         let mem: CvodeMemoryBlockNonNullPtr = {
-            let mem_maybenull = unsafe { sundials_sys::CVodeCreate(method as c_int) };
+            let mem_maybenull = unsafe { sundials_sys::CVodeCreate(method as c_int, context) };
             check_non_null(mem_maybenull as *mut CvodeMemoryBlock, "CVodeCreate")?.into()
         };
-        let y0 = NVectorSerialHeapAllocated::new_from(y0);
+        let y0 = NVectorSerialHeapAllocated::new_from(y0, context);
         let y_s0 = Box::new(
             array_init::from_iter(
                 y_s0.iter()
-                    .map(|arr| NVectorSerialHeapAllocated::new_from(arr)),
+                    .map(|arr| NVectorSerialHeapAllocated::new_from(arr, context)),
             )
             .unwrap(),
         );
         let matrix = {
             let matrix = unsafe {
-                sundials_sys::SUNDenseMatrix(N.try_into().unwrap(), N.try_into().unwrap())
+                sundials_sys::SUNDenseMatrix(N.try_into().unwrap(), N.try_into().unwrap(), context)
             };
             check_non_null(matrix, "SUNDenseMatrix")?
         };
         let linsolver = {
-            let linsolver = unsafe { sundials_sys::SUNLinSol_Dense(y0.as_raw(), matrix.as_ptr()) };
+            let linsolver =
+                unsafe { sundials_sys::SUNLinSol_Dense(y0.as_raw(), matrix.as_ptr(), context) };
             check_non_null(linsolver, "SUNDenseLinearSolver")?
         };
         let user_data = Box::pin(WrappingUserData {
@@ -175,7 +177,7 @@ where
             atol,
             atol_sens,
             user_data,
-            sensi_out_buffer: array_init::array_init(|_| NVectorSerialHeapAllocated::new()),
+            sensi_out_buffer: array_init::array_init(|_| NVectorSerialHeapAllocated::new(context)),
         };
         {
             let flag = unsafe {
