@@ -180,7 +180,8 @@ impl<UserData, F, const N: usize> Drop for Solver<UserData, F, N> {
         unsafe { sundials_sys::CVodeFree(&mut self.mem.as_raw()) }
         unsafe { sundials_sys::SUNLinSolFree(self.linsolver) };
         unsafe { sundials_sys::SUNMatDestroy(self.sunmatrix) };
-        sundials_free_context(self.context);
+        // We cannot do anything if this fails. So we ignore the output
+        let _ = sundials_free_context(self.context);
     }
 }
 
