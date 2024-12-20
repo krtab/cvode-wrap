@@ -2,12 +2,12 @@
 
 use std::{convert::TryInto, os::raw::c_int, pin::Pin};
 
-use sundials_sys::{SUNComm, SUNContext, SUNLinearSolver, SUNMatrix};
+use sundials_sys::{SUNLinearSolver, SUNMatrix};
 
 use crate::{
     check_flag_is_succes, check_non_null, sundials_create_context, sundials_free_context,
     AbsTolerance, CvodeMemoryBlock, CvodeMemoryBlockNonNullPtr, LinearMultistepMethod,
-    NVectorSerial, NVectorSerialHeapAllocated, Realtype, Result, RhsResult, StepKind,
+    NVectorSerial, NVectorSerialHeapAllocated, Realtype, Result, RhsResult, StepKind, SunContext,
 };
 
 struct WrappingUserData<UserData, F> {
@@ -32,7 +32,7 @@ pub struct Solver<UserData, F, const N: usize> {
     linsolver: SUNLinearSolver,
     atol: AbsTolerance<N>,
     user_data: Pin<Box<WrappingUserData<UserData, F>>>,
-    context: SUNContext,
+    context: SunContext,
 }
 
 extern "C" fn wrap_f<UserData, F, const N: usize>(
@@ -77,19 +77,19 @@ where
 
         assert_eq!(y0.len(), N);
         let mem: CvodeMemoryBlockNonNullPtr = {
-            let mem_maybenull = unsafe { sundials_sys::CVodeCreate(method as c_int, context) };
+            let mem_maybenull = unsafe { sundials_sys::CVodeCreate(method as c_int, context.as_ptr()) };
             check_non_null(mem_maybenull as *mut CvodeMemoryBlock, "CVodeCreate")?.into()
         };
         let y0 = NVectorSerialHeapAllocated::new_from(y0, context);
         let matrix = {
             let matrix = unsafe {
-                sundials_sys::SUNDenseMatrix(N.try_into().unwrap(), N.try_into().unwrap(), context)
+                sundials_sys::SUNDenseMatrix(N.try_into().unwrap(), N.try_into().unwrap(), context.as_ptr())
             };
             check_non_null(matrix, "SUNDenseMatrix")?
         };
         let linsolver = {
             let linsolver =
-                unsafe { sundials_sys::SUNLinSol_Dense(y0.as_raw(), matrix.as_ptr(), context) };
+                unsafe { sundials_sys::SUNLinSol_Dense(y0.as_raw(), matrix.as_ptr(), context.as_ptr()) };
             check_non_null(linsolver, "SUNDenseLinearSolver")?
         };
         let user_data = Box::pin(WrappingUserData {

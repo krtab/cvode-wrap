@@ -105,7 +105,7 @@
 //! ```
 use std::{ffi::c_void, os::raw::c_int, ptr::NonNull};
 
-use sundials_sys::{realtype, SUNComm, SUNContext};
+use sundials_sys::{realtype, SUNComm, SUNContext, _SUNContext};
 
 mod nvector;
 pub use nvector::{NVectorSerial, NVectorSerialHeapAllocated};
@@ -182,7 +182,7 @@ impl<const SIZE: usize> AbsTolerance<SIZE> {
         AbsTolerance::Scalar(atol)
     }
 
-    pub fn vector(atol: &[Realtype; SIZE], context: SUNContext) -> Self {
+    pub fn vector(atol: &[Realtype; SIZE], context: SunContext) -> Self {
         let atol = NVectorSerialHeapAllocated::new_from(atol, context);
         AbsTolerance::Vector(atol)
     }
@@ -200,7 +200,7 @@ impl<const SIZE: usize, const N_SENSI: usize> SensiAbsTolerance<SIZE, N_SENSI> {
         SensiAbsTolerance::Scalar(atol)
     }
 
-    pub fn vector(atol: &[[Realtype; SIZE]; N_SENSI], context: SUNContext) -> Self {
+    pub fn vector(atol: &[[Realtype; SIZE]; N_SENSI], context: SunContext) -> Self {
         SensiAbsTolerance::Vector(
             array_init::from_iter(
                 atol.iter()
@@ -226,18 +226,22 @@ fn check_flag_is_succes(flag: c_int, func_id: &'static str) -> Result<()> {
     }
 }
 
-fn sundials_create_context() -> Result<SUNContext> {
+pub type SunContext = std::ptr::NonNull<_SUNContext>;
+
+fn sundials_create_context() -> Result<SunContext> {
     let context = unsafe {
         let mut context: SUNContext = std::ptr::null_mut();
         let ompi_communicator_t: SUNComm = std::ptr::null_mut();
         sundials_sys::SUNContext_Create(ompi_communicator_t, &mut context);
         check_non_null(context, "SUNContext_Create")?;
-        context
+        std::ptr::NonNull::new(context).unwrap()
     };
     Ok(context)
 }
-fn sundials_free_context(mut context: SUNContext) -> Result<()> {
-    unsafe { sundials_sys::SUNContext_Free(&mut context) };
+fn sundials_free_context(context: SunContext) -> Result<()> {
+    let mut ptr = context.as_ptr();
+    let ptr_ptr: *mut *mut _SUNContext = &mut ptr;
+    unsafe { sundials_sys::SUNContext_Free(ptr_ptr) };
     Ok(())
 }
 

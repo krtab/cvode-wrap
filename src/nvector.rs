@@ -4,7 +4,7 @@ use std::{
     ptr::NonNull,
 };
 
-use sundials_sys::{realtype, SUNContext};
+use sundials_sys::{realtype, SUNContext, _SUNContext};
 
 /// A sundials `N_Vector_Serial`.
 #[repr(transparent)]
@@ -72,9 +72,9 @@ impl<const SIZE: usize> NVectorSerialHeapAllocated<SIZE> {
     }
 
     /// Creates a new vector, filled with data from `data`.
-    pub fn new_from(data: &[realtype; SIZE], context: SUNContext) -> Self {
+    pub fn new_from(data: &[realtype; SIZE], context: std::ptr::NonNull<_SUNContext>) -> Self {
         let inner = unsafe {
-            let x = Self::new_inner_uninitialized(context);
+            let x = Self::new_inner_uninitialized(context.as_ptr());
             let ptr = sundials_sys::N_VGetArrayPointer_Serial(x.as_ref().as_raw());
             std::ptr::copy_nonoverlapping(data.as_ptr(), ptr, SIZE);
             x
