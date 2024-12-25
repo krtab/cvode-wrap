@@ -331,7 +331,7 @@ mod tests {
         ysdot: [&mut [Realtype; 2]; N_SENSI],
         _data: &(),
     ) -> RhsResult {
-        for ysdot_i in std::array::IntoIter::new(ysdot) {
+        for ysdot_i in ysdot {
             *ysdot_i = [0., 0.];
         }
         RhsResult::Ok
