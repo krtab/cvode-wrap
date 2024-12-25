@@ -184,7 +184,7 @@ where
             atol_sens,
             user_data,
             sensi_out_buffer: array_init::array_init(|_| {
-                NVectorSerialHeapAllocated::new(context.as_ptr())
+                NVectorSerialHeapAllocated::new(context)
             }),
         };
         {
