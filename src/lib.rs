@@ -231,7 +231,7 @@ pub type SunContext = std::ptr::NonNull<SUNContext_>;
 fn sundials_create_context() -> Result<SunContext> {
     let context = unsafe {
         let mut context: SUNContext = std::ptr::null_mut();
-        let ompi_communicator_t: SUNComm = 0;
+        let ompi_communicator_t: SUNComm = std::ptr::null_mut();
         sundials_sys::SUNContext_Create(ompi_communicator_t, &mut context);
         check_non_null(context, "SUNContext_Create")?;
         std::ptr::NonNull::new(context).unwrap()
@@ -240,7 +240,7 @@ fn sundials_create_context() -> Result<SunContext> {
 }
 fn sundials_free_context(context: SunContext) -> Result<()> {
     let mut ptr = context.as_ptr();
-    let ptr_ptr: *mut *mut SUNContext_ = &mut ptr;
+    let ptr_ptr: *mut SUNContext = &mut ptr;
     unsafe { sundials_sys::SUNContext_Free(ptr_ptr) };
     Ok(())
 }
