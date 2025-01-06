@@ -105,7 +105,7 @@
 //! ```
 use std::{ffi::c_void, os::raw::c_int, ptr::NonNull};
 
-use sundials_sys::realtype;
+use sundials_sys::{realtype, SUNComm, SUNContext, SUNContext_};
 
 mod nvector;
 pub use nvector::{NVectorSerial, NVectorSerialHeapAllocated};
@@ -182,8 +182,8 @@ impl<const SIZE: usize> AbsTolerance<SIZE> {
         AbsTolerance::Scalar(atol)
     }
 
-    pub fn vector(atol: &[Realtype; SIZE]) -> Self {
-        let atol = NVectorSerialHeapAllocated::new_from(atol);
+    pub fn vector(atol: &[Realtype; SIZE], context: SunContext) -> Self {
+        let atol = NVectorSerialHeapAllocated::new_from(atol, context);
         AbsTolerance::Vector(atol)
     }
 }
@@ -200,11 +200,11 @@ impl<const SIZE: usize, const N_SENSI: usize> SensiAbsTolerance<SIZE, N_SENSI> {
         SensiAbsTolerance::Scalar(atol)
     }
 
-    pub fn vector(atol: &[[Realtype; SIZE]; N_SENSI]) -> Self {
+    pub fn vector(atol: &[[Realtype; SIZE]; N_SENSI], context: SunContext) -> Self {
         SensiAbsTolerance::Vector(
             array_init::from_iter(
                 atol.iter()
-                    .map(|arr| NVectorSerialHeapAllocated::new_from(arr)),
+                    .map(|arr| NVectorSerialHeapAllocated::new_from(arr, context)),
             )
             .unwrap(),
         )
@@ -224,6 +224,25 @@ fn check_flag_is_succes(flag: c_int, func_id: &'static str) -> Result<()> {
     } else {
         Err(Error::ErrorCode { flag, func_id })
     }
+}
+
+pub type SunContext = std::ptr::NonNull<SUNContext_>;
+
+fn sundials_create_context() -> Result<SunContext> {
+    let context = unsafe {
+        let mut context: SUNContext = std::ptr::null_mut();
+        let ompi_communicator_t: SUNComm = std::ptr::null_mut();
+        sundials_sys::SUNContext_Create(ompi_communicator_t, &mut context);
+        check_non_null(context, "SUNContext_Create")?;
+        std::ptr::NonNull::new(context).unwrap()
+    };
+    Ok(context)
+}
+fn sundials_free_context(context: SunContext) -> Result<()> {
+    let mut ptr = context.as_ptr();
+    let ptr_ptr: *mut SUNContext = &mut ptr;
+    unsafe { sundials_sys::SUNContext_Free(ptr_ptr) };
+    Ok(())
 }
 
 #[repr(C)]

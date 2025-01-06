@@ -5,7 +5,7 @@ use std::{convert::TryInto, os::raw::c_int, pin::Pin};
 use sundials_sys::{SUNLinearSolver, SUNMatrix, CV_STAGGERED};
 
 use crate::{
-    check_flag_is_succes, check_non_null, AbsTolerance, CvodeMemoryBlock,
+    check_flag_is_succes, check_non_null, sundials_create_context, AbsTolerance, CvodeMemoryBlock,
     CvodeMemoryBlockNonNullPtr, LinearMultistepMethod, NVectorSerial, NVectorSerialHeapAllocated,
     Realtype, Result, RhsResult, SensiAbsTolerance, StepKind,
 };
@@ -125,7 +125,7 @@ where
     ) -> RhsResult,
 {
     /// Creates a new solver.
-    #[allow(clippy::clippy::too_many_arguments)]
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         method: LinearMultistepMethod,
         f: F,
@@ -139,26 +139,34 @@ where
         user_data: UserData,
     ) -> Result<Self> {
         assert_eq!(y0.len(), N);
+        let context = sundials_create_context()?;
         let mem: CvodeMemoryBlockNonNullPtr = {
-            let mem_maybenull = unsafe { sundials_sys::CVodeCreate(method as c_int) };
+            let mem_maybenull =
+                unsafe { sundials_sys::CVodeCreate(method as c_int, context.as_ptr()) };
             check_non_null(mem_maybenull as *mut CvodeMemoryBlock, "CVodeCreate")?.into()
         };
-        let y0 = NVectorSerialHeapAllocated::new_from(y0);
+        let y0 = NVectorSerialHeapAllocated::new_from(y0, context);
         let y_s0 = Box::new(
             array_init::from_iter(
                 y_s0.iter()
-                    .map(|arr| NVectorSerialHeapAllocated::new_from(arr)),
+                    .map(|arr| NVectorSerialHeapAllocated::new_from(arr, context)),
             )
             .unwrap(),
         );
         let matrix = {
             let matrix = unsafe {
-                sundials_sys::SUNDenseMatrix(N.try_into().unwrap(), N.try_into().unwrap())
+                sundials_sys::SUNDenseMatrix(
+                    N.try_into().unwrap(),
+                    N.try_into().unwrap(),
+                    context.as_ptr(),
+                )
             };
             check_non_null(matrix, "SUNDenseMatrix")?
         };
         let linsolver = {
-            let linsolver = unsafe { sundials_sys::SUNLinSol_Dense(y0.as_raw(), matrix.as_ptr()) };
+            let linsolver = unsafe {
+                sundials_sys::SUNLinSol_Dense(y0.as_raw(), matrix.as_ptr(), context.as_ptr())
+            };
             check_non_null(linsolver, "SUNDenseLinearSolver")?
         };
         let user_data = Box::pin(WrappingUserData {
@@ -175,7 +183,9 @@ where
             atol,
             atol_sens,
             user_data,
-            sensi_out_buffer: array_init::array_init(|_| NVectorSerialHeapAllocated::new()),
+            sensi_out_buffer: array_init::array_init(|_| {
+                NVectorSerialHeapAllocated::new(context)
+            }),
         };
         {
             let flag = unsafe {
@@ -256,7 +266,7 @@ where
     /// reached by the solver as dictated by `step_kind`, `y(t_out)` is an
     /// array of the state variables at that time, and the i-th `dy_dp(tout)` is an array
     /// of the sensitivities of all variables with respect to parameter i.
-    #[allow(clippy::clippy::type_complexity)]
+    #[allow(clippy::type_complexity)]
     pub fn step(
         &mut self,
         tout: Realtype,
@@ -321,7 +331,7 @@ mod tests {
         ysdot: [&mut [Realtype; 2]; N_SENSI],
         _data: &(),
     ) -> RhsResult {
-        for ysdot_i in std::array::IntoIter::new(ysdot) {
+        for ysdot_i in ysdot {
             *ysdot_i = [0., 0.];
         }
         RhsResult::Ok
